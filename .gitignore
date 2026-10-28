@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# saved OCR text of real receipts (scripts/try-receipt.ts)
+/.cache/

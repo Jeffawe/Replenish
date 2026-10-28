@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IngestResult } from "@/core/purchase-batch";
-import { createSampleStore, type ReadSample } from "./samples";
+import { createSampleStore, samplesFolder, type ReadSample } from "./samples";
 
 const NOW = new Date("2026-10-28T10:00:00Z");
 const RESULT: IngestResult = { status: "processed", items: [] };
@@ -64,5 +64,17 @@ describe("test samples", () => {
 
     await expect(createSampleStore(file, () => NOW, onError).saveRead(read())).resolves.toBeUndefined();
     expect(onError).toHaveBeenCalledOnce();
+  });
+});
+
+describe("the configured samples folder", () => {
+  it("expands ~ to the home folder, so one setting works on any machine", () => {
+    expect(samplesFolder("~/replenish-samples", "/home/jeff")).toBe("/home/jeff/replenish-samples");
+    expect(samplesFolder("~", "/home/jeff")).toBe("/home/jeff");
+  });
+
+  it("leaves other paths alone", () => {
+    expect(samplesFolder("/srv/samples", "/home/jeff")).toBe("/srv/samples");
+    expect(samplesFolder("~jeff/samples", "/home/jeff")).toMatch(/~jeff\/samples$/);
   });
 });

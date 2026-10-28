@@ -4,7 +4,6 @@
  * needs as parameters, so it can be tested without a database. Triggers
  * (server actions, route handlers) import from here.
  */
-import { resolve } from "node:path";
 import {
   listAliases,
   listIgnoredWordings,
@@ -23,7 +22,7 @@ import { syncInbox } from "./email/sync";
 import type { InboxProvider } from "./email/types";
 import { createReceiptExtractor } from "./receipt/extractor";
 import { createGoogleVisionEngine } from "./receipt/ocr/google-vision";
-import { createSampleStore } from "./receipt/samples";
+import { createSampleStore, samplesFolder } from "./receipt/samples";
 import { createRegistry } from "./registry";
 import { createExtractionRunner } from "./run";
 import { createSubmit } from "./submit";
@@ -32,7 +31,7 @@ import { createSubmit } from "./submit";
  * Test samples (receipt photo, OCR, draft, what the user confirmed) are kept
  * only when SAMPLES_DIR names a folder. Leave it unset on a live deploy.
  */
-const samples = process.env.SAMPLES_DIR ? createSampleStore(resolve(process.env.SAMPLES_DIR)) : null;
+const samples = process.env.SAMPLES_DIR ? createSampleStore(samplesFolder(process.env.SAMPLES_DIR)) : null;
 
 /** Every producer. A new way of ingesting is added here. */
 const getExtractor = createRegistry([

@@ -1,5 +1,6 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import type { IngestResult } from "@/core/purchase-batch";
 import type { Draft } from "../types";
 import type { OcrResult } from "./ocr/types";
@@ -85,3 +86,8 @@ export function createSampleStore(
   };
 }
 
+
+/** A configured folder as an absolute path; a leading `~` means the home folder (env files don't expand it). */
+export function samplesFolder(configured: string, home: string = homedir()): string {
+  return resolve(/^~(?=$|[\\/])/.test(configured) ? home + configured.slice(1) : configured);
+}
