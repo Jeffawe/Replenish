@@ -2,14 +2,8 @@
 
 import { useId, useState } from "react";
 import type { PurchaseBatchInput } from "@/core/purchase-batch";
-import { toDisplayName } from "@/modules/ingestion/receipt/parse";
-import type { Draft } from "@/modules/ingestion/types";
-
-export interface ProductOption {
-  id: string;
-  name: string;
-  unit: string;
-}
+import { toDisplayName, type Draft } from "@/modules/ingestion/client";
+import type { ProductOption } from "../flow-kit";
 
 interface Props {
   draft: Draft;

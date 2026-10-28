@@ -1,5 +1,5 @@
 import type { IngestResult } from "@/core/purchase-batch";
-import { normalizeProductName } from "@/modules/inventory/types";
+import { normalizeProductName } from "@/core/product-name";
 
 /** What the user did with each line of a reviewed draft, by how the input worded it. */
 export interface Review {

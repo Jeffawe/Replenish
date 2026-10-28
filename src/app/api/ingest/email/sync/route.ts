@@ -1,8 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { checkApiAccess } from "@/lib/api-access";
 import { getDemoUser } from "@/lib/demo-user";
-import { createSimulatedInbox } from "@/modules/ingestion/email/inbox/simulated";
-import { syncEmailInbox } from "@/modules/ingestion";
+import { createSimulatedInbox, syncEmailInbox } from "@/modules/ingestion";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

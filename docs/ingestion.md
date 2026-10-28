@@ -108,7 +108,7 @@ The same file exports `listProductSummaries` and `listPurchasesNear`, the two re
 
 Neither knows anything about a particular source. `extractAction` turns an `ExtractionError` into `{ ok: false, error: "failed", message }`. `submitAction` also takes an optional list of how each line was worded, and remembers those wordings as product aliases (see [Receipts](#receipts)). The browser must never call `/api/ingest` directly, because that endpoint needs a secret key.
 
-Today the only UI using them is the **+** button on the dashboard ([add-purchases/](../src/app/dashboard/add-purchases/)).
+Today the only UI using them is the **+** button on the dashboard ([add-purchases/](../src/app/dashboard/add-purchases/)), which only shows the menu of sources and the finished screen. Each source's own screens are a *flow* ([flow-kit.tsx](../src/app/ingest/flow-kit.tsx)); the receipt one is in [ingest/receipt/](../src/app/ingest/receipt/)..
 
 ### HTTP endpoints (outside services)
 
@@ -140,14 +140,14 @@ browser: preview ─▶ Add ─▶ shrink photo ─▶ extractAction ─▶ OCR 
 
 | Step | File | What it does |
 |---|---|---|
-| Shrink | [prepare-image.ts](../src/app/dashboard/add-purchases/prepare-image.ts) | Resizes the photo to at most 2400px on its longest side and re-encodes it as JPEG under 3 MB, upright. Server Actions accept 4 MB (set in [next.config.ts](../next.config.ts)). |
+| Shrink | [prepare-image.ts](../src/app/ingest/receipt/prepare-image.ts) | Resizes the photo to at most 2400px on its longest side and re-encodes it as JPEG under 3 MB, upright. Server Actions accept 4 MB (set in [next.config.ts](../next.config.ts)). |
 | OCR | [ocr/google-vision.ts](../src/modules/ingestion/receipt/ocr/google-vision.ts) | Google Cloud Vision `DOCUMENT_TEXT_DETECTION`. Returns each word with its position. Behind the `OcrEngine` interface in [ocr/types.ts](../src/modules/ingestion/receipt/ocr/types.ts), so another engine is one new file and one line in `index.ts`. |
 | Rows | [layout.ts](../src/modules/ingestion/receipt/layout.ts) | Straightens a tilted photo, then rebuilds printed rows from word positions, so a name and its far-away price land on one row. Each name's own slope is carried across to the price column, so a curled receipt (names sloping, prices level) still pairs them right. |
 | Parse | [parse.ts](../src/modules/ingestion/receipt/parse.ts) | Plain pattern matching: store, date, subtotal and total, and the lines above the last subtotal or total. Strips item codes, tax flags and pack sizes (`12CT` and `4-5 COUNT` multiply the quantity), handles `2 @ 3.49` and weighed items, skips discounts and non-products. A line whose price couldn't be read is kept if the dictionary knows the item. |
 | Identify | [catalog.ts](../src/modules/ingestion/receipt/catalog.ts) | The starter dictionary: about 160 everyday US items with their receipt abbreviations, about 100 brands (store brands like GV and KS included), and things that don't get used up (furniture, electronics, clothing...). Turns `GV WHL MLK GL` into the item **Milk**, brand **Great Value**. A brand that only makes one thing implies the item (Charmin means Toilet Paper). |
 | Match | [match.ts](../src/modules/ingestion/receipt/match.ts) | Ties a line to one of the user's products: the receipt's wording, then a learned alias, then the dictionary's item name, then the one product whose name holds that item ("Paper Towels" in "Bounty Paper Towels"), then a similar name only when one product clearly stands out. Otherwise the line is a new product, named for the item. |
 | Draft | [extractor.ts](../src/modules/ingestion/receipt/extractor.ts) | Builds the batch (item name, brand, and for a new product the dictionary's category and unit) and the warnings (missing date, items add up to less than the subtotal, weight vs count). Marks lines that should start unticked: things that don't get used up, and wordings the user left out before. |
-| Review | [receipt-review.tsx](../src/app/dashboard/add-purchases/receipt-review.tsx) | One compact row per line: name, product tag (tap to change), brand, quantity. Unit, price and brand are edited in the row's expander. Nothing is stored until they confirm. |
+| Review | [receipt-review.tsx](../src/app/ingest/receipt/receipt-review.tsx) | One compact row per line: name, product tag (tap to change), brand, quantity. Unit, price and brand are edited in the row's expander. Nothing is stored until they confirm. |
 
 **Idempotency key.** A hash of the store, date and total, not of the photo. A second photo of the same receipt then gets the same key and is stored once. When no total can be read it falls back to a hash of the photo's bytes.
 

@@ -1,5 +1,5 @@
 import type { ProductSummary } from "@/core/purchase-batch";
-import { normalizeProductName } from "@/modules/inventory/types";
+import { normalizeProductName } from "@/core/product-name";
 import type { DraftLine } from "../types";
 
 /** A wording the user has already told us belongs to a product. */

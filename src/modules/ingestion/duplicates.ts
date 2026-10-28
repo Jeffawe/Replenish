@@ -1,5 +1,5 @@
 import type { ProductSummary, PurchaseSummary } from "@/core/purchase-batch";
-import { normalizeProductName } from "@/modules/inventory/types";
+import { normalizeProductName } from "@/core/product-name";
 import type { Warning } from "./types";
 
 interface BatchForCheck {

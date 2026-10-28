@@ -8,11 +8,6 @@ export const InventoryCorrectionInputSchema = z.object({
 });
 export type InventoryCorrectionInput = z.infer<typeof InventoryCorrectionInputSchema>;
 
-/** Normalizes a product name for matching incoming events to a product. */
-export function normalizeProductName(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
 /**
  * Brands are stored as one comma-separated string for now (v1). Splits,
  * trims, drops blanks and case-insensitive duplicates, and rejoins.

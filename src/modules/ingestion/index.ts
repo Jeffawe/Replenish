@@ -44,6 +44,11 @@ const getExtractor = createRegistry([
   emailExtractor,
 ]);
 
+// Everything outside this folder imports from here (server code) or from ./client (browser code), never from deeper files.
+export { createSimulatedInbox } from "./email/inbox/simulated";
+export { ExtractionError } from "./types";
+export type { RunOutcome } from "./run";
+
 /** Validate a batch and store it. */
 export const submitBatch = createSubmit(ingestPurchaseBatch);
 

@@ -9,7 +9,8 @@ import type {
 import { db } from "@/db/client";
 import { products, purchaseEvents, type Product } from "@/db/schema";
 import { listProducts } from "./repo";
-import { normalizeBrands, normalizeProductName } from "./types";
+import { normalizeProductName } from "@/core/product-name";
+import { normalizeBrands } from "./types";
 
 type Line = PurchaseBatch["items"][number];
 

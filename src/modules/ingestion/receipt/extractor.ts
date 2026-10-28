@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { PurchaseLineSchema } from "@/core/purchase-batch";
 import { formatPrice } from "@/lib/format";
 import type { DraftLine, ExtractContext, ExtractResult, Extractor, Warning } from "../types";
-import { normalizeProductName } from "@/modules/inventory/types";
+import { normalizeProductName } from "@/core/product-name";
 import { identify, type Identified } from "./catalog";
 import { groupIntoRows } from "./layout";
 import { createMatcher, type ProductAlias } from "./match";

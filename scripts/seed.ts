@@ -9,7 +9,7 @@ import {
   users,
   type NewPurchaseEventRow,
 } from "../src/db/schema";
-import { normalizeProductName } from "../src/modules/inventory/types";
+import { normalizeProductName } from "../src/core/product-name";
 
 const DEMO_USER_EMAIL = "demo@replenish.local";
 const DAY_MS = 24 * 60 * 60 * 1000;

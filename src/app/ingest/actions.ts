@@ -3,9 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getDemoUser } from "@/lib/demo-user";
-import { extractPurchases, learnFromReview, recordConfirmedSample, submitBatch } from "@/modules/ingestion";
-import type { RunOutcome } from "@/modules/ingestion/run";
-import { ExtractionError } from "@/modules/ingestion/types";
+import {
+  ExtractionError,
+  extractPurchases,
+  learnFromReview,
+  recordConfirmedSample,
+  submitBatch,
+  type RunOutcome,
+} from "@/modules/ingestion";
 
 /**
  * The two actions the UI uses for every user-driven source, however many
