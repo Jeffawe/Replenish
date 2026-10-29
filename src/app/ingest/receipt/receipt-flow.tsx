@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { PurchaseBatchInput } from "@/core/purchase-batch";
 import type { Draft } from "@/modules/ingestion/client";
-import { extractAction, submitAction } from "../actions";
+import { addPhotoAction, extractAction, mergePhotoAction, submitAction } from "../actions";
 import { CHOICE, FlowHeader, PRIMARY, SECONDARY, type FlowProps } from "../flow-kit";
 import { prepareReceiptImage } from "./prepare-image";
 import { ReceiptReview } from "./receipt-review";
@@ -48,6 +48,13 @@ export function ReceiptFlow({ products, onFinished, onBack, onClose }: FlowProps
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [previewFailed, setPreviewFailed] = useState(false);
+  // Adding another photo to the receipt under review (the review stays on screen meanwhile).
+  const [adding, setAdding] = useState(false);
+  const [addNotice, setAddNotice] = useState<string | null>(null);
+  // A photo that looks like a different receipt, waiting for the user to say whether to use it anyway.
+  const [different, setDifferent] = useState<{ previous: Draft; photoDraft: Draft; reasons: string[] } | null>(null);
+  // Which button opened the file picker: a first photo, or one to add.
+  const pickingRef = useRef<"first" | "add">("first");
   const canUseCamera = useSyncExternalStore(noSubscription, hasTouch, serverHasTouch);
 
   function releasePreview() {
@@ -147,10 +154,70 @@ export function ReceiptFlow({ products, onFinished, onBack, onClose }: FlowProps
     }
   }
 
+  async function addPhoto(file: File, draft: Draft) {
+    const request = requestRef.current;
+    setAdding(true);
+    setAddNotice(null);
+    setDifferent(null);
+    try {
+      const form = new FormData();
+      form.set("image", await prepareReceiptImage(file));
+      const outcome = await addPhotoAction(draft, form);
+      if (request !== requestRef.current) return;
+
+      if (!outcome.ok && outcome.error === "different-receipt") {
+        setDifferent({ previous: draft, photoDraft: outcome.photoDraft, reasons: outcome.reasons });
+      } else if (!outcome.ok) {
+        setAddNotice(
+          outcome.error === "failed"
+            ? outcome.message
+            : outcome.error === "invalid-input"
+              ? (outcome.issues[0]?.message ?? "We couldn't use that file.")
+              : "We couldn't add that photo. Please try again.",
+        );
+      } else if (outcome.result.kind === "skipped") {
+        setAddNotice(outcome.result.reason);
+      } else {
+        setView({ name: "review", draft: outcome.result.draft });
+      }
+    } catch (error) {
+      if (request !== requestRef.current) return;
+      setAddNotice(error instanceof Error ? error.message : "We couldn't send that photo. Please try again.");
+    } finally {
+      if (request === requestRef.current) setAdding(false);
+    }
+  }
+
+  /** The user said to use a photo that looked like another receipt after all. */
+  async function addAnyway(pending: NonNullable<typeof different>) {
+    const request = requestRef.current;
+    setAdding(true);
+    try {
+      const outcome = await mergePhotoAction(pending.previous, pending.photoDraft);
+      if (request !== requestRef.current) return;
+      setDifferent(null);
+      if (outcome.ok && outcome.result.kind === "draft") setView({ name: "review", draft: outcome.result.draft });
+      else setAddNotice("We couldn't add that photo. Please try again.");
+    } catch {
+      if (request === requestRef.current) setAddNotice("We couldn't add that photo. Please try again.");
+    } finally {
+      if (request === requestRef.current) setAdding(false);
+    }
+  }
+
   function pickFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = ""; // so choosing the same file again still counts
+    if (pickingRef.current === "add" && view.name === "review") {
+      if (file) void addPhoto(file, view.draft);
+      return;
+    }
     showPreview(file);
+  }
+
+  function choosePhoto(input: React.RefObject<HTMLInputElement | null>, mode: "first" | "add") {
+    pickingRef.current = mode;
+    input.current?.click();
   }
 
   const { title, subtitle } = heading(view);
@@ -172,12 +239,12 @@ export function ReceiptFlow({ products, onFinished, onBack, onClose }: FlowProps
 
           <div className={canUseCamera ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"}>
             {canUseCamera && (
-              <button type="button" onClick={() => cameraRef.current?.click()} className={CHOICE}>
+              <button type="button" onClick={() => choosePhoto(cameraRef, "first")} className={CHOICE}>
                 <span className="text-base font-medium">Take a photo</span>
                 <span className="text-sm text-zinc-500 dark:text-zinc-400">Open the camera</span>
               </button>
             )}
-            <button type="button" onClick={() => uploadRef.current?.click()} className={CHOICE}>
+            <button type="button" onClick={() => choosePhoto(uploadRef, "first")} className={CHOICE}>
               <span className="text-base font-medium">{canUseCamera ? "Upload a photo" : "Choose a photo"}</span>
               <span className="text-sm text-zinc-500 dark:text-zinc-400">From your files or gallery</span>
             </button>
@@ -248,10 +315,21 @@ export function ReceiptFlow({ products, onFinished, onBack, onClose }: FlowProps
         <ReceiptReview
           draft={view.draft}
           products={products}
-          busy={saving}
+          busy={saving || adding}
           error={saveError}
           onConfirm={save}
           onCancel={onClose}
+          extra={
+            <AddPhoto
+              adding={adding}
+              notice={addNotice}
+              different={different && { reasons: different.reasons, onUse: () => void addAnyway(different), onSkip: () => setDifferent(null) }}
+              hasWarning={view.draft.warnings.some((warning) => warning.code === "total-mismatch")}
+              canUseCamera={canUseCamera}
+              onCamera={() => choosePhoto(cameraRef, "add")}
+              onUpload={() => choosePhoto(uploadRef, "add")}
+            />
+          }
         />
       )}
 
@@ -259,5 +337,77 @@ export function ReceiptFlow({ products, onFinished, onBack, onClose }: FlowProps
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={pickFile} className="sr-only" tabIndex={-1} aria-hidden />
       <input ref={uploadRef} type="file" accept="image/*" onChange={pickFile} className="sr-only" tabIndex={-1} aria-hidden />
     </>
+  );
+}
+
+/** Under the review's lines: add another photo of the same receipt (the rest of a long one, or a better shot of what was missed). */
+function AddPhoto({
+  adding,
+  notice,
+  different,
+  hasWarning,
+  canUseCamera,
+  onCamera,
+  onUpload,
+}: {
+  adding: boolean;
+  notice: string | null;
+  /** Set when the photo looks like a different receipt. */
+  different: { reasons: string[]; onUse(): void; onSkip(): void } | null;
+  hasWarning: boolean;
+  canUseCamera: boolean;
+  onCamera(): void;
+  onUpload(): void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-dashed border-zinc-300 px-4 py-3 dark:border-zinc-700">
+      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        {hasWarning
+          ? "Something missing? Add another photo of the receipt (the rest of it, or a clearer shot) and we'll add what it shows."
+          : "Is there more of the receipt? Add another photo and we'll add what it shows."}
+      </p>
+      {adding ? (
+        <p role="status" aria-live="polite" className="flex items-center gap-2 text-sm font-medium">
+          <span aria-hidden className="size-4 animate-spin rounded-full border-2 border-zinc-300 border-t-foreground dark:border-zinc-700" />
+          Reading the photo…
+        </p>
+      ) : different ? (
+        <div role="alert" className="flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 dark:border-amber-900 dark:bg-amber-950">
+          <p className="text-sm font-medium">That looks like a different receipt.</p>
+          <ul className="list-disc pl-5 text-sm">
+            {different.reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            To add a different receipt, save this one first, then press Add another.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={different.onSkip} className={PRIMARY}>
+              Not this one
+            </button>
+            <button type="button" onClick={different.onUse} className={SECONDARY}>
+              Use it anyway
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {canUseCamera && (
+            <button type="button" onClick={onCamera} className={SECONDARY}>
+              Take another photo
+            </button>
+          )}
+          <button type="button" onClick={onUpload} className={SECONDARY}>
+            {canUseCamera ? "Choose from gallery" : "Add another photo"}
+          </button>
+        </div>
+      )}
+      {notice && (
+        <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">
+          {notice}
+        </p>
+      )}
+    </div>
   );
 }

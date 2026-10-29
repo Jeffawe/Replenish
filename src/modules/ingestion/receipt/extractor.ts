@@ -1,7 +1,5 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { PurchaseLineSchema } from "@/core/purchase-batch";
-import { formatPrice } from "@/lib/format";
 import type { DraftLine, ExtractContext, ExtractResult, Extractor, Warning } from "../types";
 import { normalizeProductName } from "@/core/product-name";
 import { identify, type Identified } from "./catalog";
@@ -9,6 +7,7 @@ import { groupIntoRows } from "./layout";
 import { createMatcher, type ProductAlias } from "./match";
 import type { OcrEngine, OcrResult } from "./ocr/types";
 import type { ReadSample } from "./samples";
+import { receiptKey, sha256, totalMismatch } from "./totals";
 import { parseReceipt, toDisplayName } from "./parse";
 
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -36,7 +35,6 @@ export interface ReceiptDeps {
 
 type Line = z.input<typeof PurchaseLineSchema>;
 
-const sha256 = (data: Uint8Array | string) => createHash("sha256").update(data).digest("hex");
 const day = (date: Date) => date.toISOString().slice(0, 10);
 const unitKey = (unit: string) => unit.trim().toLowerCase().replace(/s$/, "");
 const PREPARED_DISH = /\b(?:sand(?:wich)?|pancakes?|grits|marsala|tikka|fried rice|naan|bhajia|b(?:ir|ri)yani|enchiladas?|quesadillas?|french toast|milk shake|burger|tenders?|entree|lunch|dinner|curry|flautas?|taquitos?|omelettes?|lollipop|grilled cheese|garlic fries|chips)\b/i;
@@ -144,30 +142,19 @@ export function createReceiptExtractor(deps: ReceiptDeps): Extractor<ReceiptInpu
         message: "We couldn't read the date on this receipt, so it is set to today. Check it.",
       });
     }
-    const itemsTotal = items.reduce((sum, item) => sum + (item.priceCents ?? 0), 0);
-    // Lines are at full price; the subtotal is after any coupons or instant savings.
-    const afterDiscounts = itemsTotal - parsed.discountsCents;
-    if (parsed.subtotalCents !== null && Math.abs(afterDiscounts - parsed.subtotalCents) > 1) {
-      const discounted =
-        parsed.discountsCents > 0 ? ` (after ${formatPrice(parsed.discountsCents, parsed.currency)} of discounts)` : "";
-      warnings.push({
-        code: "total-mismatch",
-        message: `The items we found add up to ${formatPrice(afterDiscounts, parsed.currency)}${discounted} but the receipt's subtotal is ${formatPrice(parsed.subtotalCents, parsed.currency)}. Check for a missing, duplicate or discounted line.`,
-      });
-    }
+    const totals = { subtotalCents: parsed.subtotalCents, discountsCents: parsed.discountsCents };
+    const mismatch = totalMismatch(items, totals, parsed.currency);
+    if (mismatch) warnings.push(mismatch);
 
     const purchasedAt = day(parsed.date ?? ctx.now);
-    const key =
-      parsed.totalCents === null
-        ? sha256(bytes)
-        : sha256(JSON.stringify([parsed.store?.toLowerCase() ?? "", purchasedAt, parsed.totalCents]));
+    const key = receiptKey(parsed.store, purchasedAt, parsed.totalCents, sha256(bytes));
 
     return {
       kind: "draft",
       draft: {
         batch: {
           source: "receipt",
-          idempotencyKey: `receipt-${key.slice(0, 32)}`,
+          idempotencyKey: key,
           ...(parsed.store && { store: parsed.store }),
           purchasedAt,
           currency: parsed.currency,
@@ -177,6 +164,7 @@ export function createReceiptExtractor(deps: ReceiptDeps): Extractor<ReceiptInpu
         warnings,
         lines,
         sourceText,
+        totals: { ...totals, totalCents: parsed.totalCents },
       },
     };
   }

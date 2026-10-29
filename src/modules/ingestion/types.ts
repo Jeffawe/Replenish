@@ -40,6 +40,8 @@ export interface Draft {
   lines?: DraftLine[];
   /** The raw text the producer read, so the user can check it against the draft. */
   sourceText?: string;
+  /** What the input says the lines should add up to, so the draft can be checked again after more is added to it. */
+  totals?: { subtotalCents: number | null; totalCents: number | null; discountsCents: number };
 }
 
 export type ExtractResult =

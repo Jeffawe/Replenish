@@ -18,6 +18,8 @@ interface Props {
    */
   onConfirm(batch: PurchaseBatchInput, review: { sources: string[]; skipped: string[] }): void;
   onCancel(): void;
+  /** Shown under the list of lines: a way to add another photo. */
+  extra?: React.ReactNode;
 }
 
 interface LineState {
@@ -38,8 +40,11 @@ interface LineState {
   price: string;
 }
 
-const INPUT =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-300 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-500 dark:focus:ring-zinc-700";
+// No width or padding here: Tailwind lets `w-full` and `px-3` beat a smaller one added later, which made the quantity box
+// fill the row and push the name out of view on a phone.
+const INPUT_LOOK =
+  "rounded-lg border border-zinc-300 bg-white text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-300 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-500 dark:focus:ring-zinc-700";
+const INPUT = "w-full px-3 py-2 " + INPUT_LOOK;
 const NOTE =
   "rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100";
 
@@ -65,7 +70,7 @@ function initialLines(draft: Draft): LineState[] {
   });
 }
 
-export function ReceiptReview({ draft, products, busy, error, onConfirm, onCancel }: Props) {
+export function ReceiptReview({ draft, products, busy, error, onConfirm, onCancel, extra }: Props) {
   const uid = useId();
   const productsById = new Map(products.map((product) => [product.id, product]));
 
@@ -75,6 +80,16 @@ export function ReceiptReview({ draft, products, busy, error, onConfirm, onCance
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
   const [problems, setProblems] = useState<Record<number, string>>({});
   const [formProblem, setFormProblem] = useState<string | null>(null);
+
+  // When the draft grows (another photo was added to it), keep everything the user has done:
+  // new lines go after the old ones, and the store and date follow the draft unless they were edited.
+  const [seenDraft, setSeenDraft] = useState(draft);
+  if (draft !== seenDraft) {
+    setSeenDraft(draft);
+    setLines((current) => [...current, ...initialLines(draft).slice(current.length)]);
+    if (store === (seenDraft.batch.store ?? "")) setStore(draft.batch.store ?? "");
+    if (date === String(seenDraft.batch.purchasedAt).slice(0, 10)) setDate(String(draft.batch.purchasedAt).slice(0, 10));
+  }
 
   const update = (index: number, patch: Partial<LineState>) =>
     setLines((current) => current.map((line) => (line.index === index ? { ...line, ...patch } : line)));
@@ -138,7 +153,7 @@ export function ReceiptReview({ draft, products, busy, error, onConfirm, onCance
           </p>
         ))}
 
-        <div className="grid grid-cols-[1fr_auto] gap-2">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
           <input
             aria-label="Store"
             value={store}
@@ -153,7 +168,7 @@ export function ReceiptReview({ draft, products, busy, error, onConfirm, onCance
             value={date}
             onChange={(e) => setDate(e.target.value)}
             required
-            className={INPUT}
+            className={"min-w-0 px-3 py-2 " + INPUT_LOOK}
           />
         </div>
 
@@ -204,7 +219,7 @@ export function ReceiptReview({ draft, products, busy, error, onConfirm, onCance
                       min="0"
                       value={line.quantity}
                       onChange={(e) => update(line.index, { quantity: e.target.value })}
-                      className={INPUT + " w-16 px-2 py-1.5 text-right tabular-nums"}
+                      className={"w-14 px-2 py-1.5 text-right tabular-nums " + INPUT_LOOK}
                     />
                     <span className="hidden max-w-16 truncate text-xs text-zinc-500 sm:inline dark:text-zinc-400">{unit}</span>
                     <button
@@ -292,6 +307,8 @@ export function ReceiptReview({ draft, products, busy, error, onConfirm, onCance
             );
           })}
         </ul>
+
+        {extra}
 
         {draft.sourceText && (
           <details className="rounded-xl border border-zinc-200 dark:border-zinc-800">

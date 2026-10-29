@@ -24,7 +24,11 @@ import { createReceiptExtractor } from "./receipt/extractor";
 import { createGoogleVisionEngine } from "./receipt/ocr/google-vision";
 import { createSampleStore, samplesFolder } from "./receipt/samples";
 import { createRegistry } from "./registry";
-import { createExtractionRunner } from "./run";
+import { DraftSchema } from "./draft-schema";
+import type { Draft } from "./types";
+import { mergeDrafts } from "./receipt/merge";
+import { whyDifferentReceipt } from "./receipt/same-receipt";
+import { createDuplicateChecker, createExtractionRunner, type RunOutcome } from "./run";
 import { createSubmit } from "./submit";
 
 /**
@@ -48,16 +52,46 @@ const getExtractor = createRegistry([
 export { createSimulatedInbox } from "./email/inbox/simulated";
 export { ExtractionError } from "./types";
 export type { RunOutcome } from "./run";
+export type AddPhotoOutcome =
+  | RunOutcome
+  | { ok: false; error: "invalid-draft" }
+  /** The photo reads like another receipt. `photoDraft` is what it holds, to merge anyway with `mergeReceiptDrafts` (no second read). */
+  | { ok: false; error: "different-receipt"; reasons: string[]; photoDraft: Draft };
 
 /** Validate a batch and store it. */
 export const submitBatch = createSubmit(ingestPurchaseBatch);
 
+/** What the duplicate check reads from storage. */
+const loadForDuplicates = { loadProducts: listProductSummaries, loadNearby: listPurchasesNear };
+
 /** Run the producer for `source` on raw input and return a draft (stores nothing). */
-export const extractPurchases = createExtractionRunner({
-  getExtractor,
-  loadProducts: listProductSummaries,
-  loadNearby: listPurchasesNear,
-});
+export const extractPurchases = createExtractionRunner({ getExtractor, ...loadForDuplicates });
+
+/**
+ * Reads another photo of a receipt and adds what it shows to the draft the
+ * user already has (a long receipt in two photos, or a first photo that
+ * missed something). Returns the merged draft; stores nothing.
+ */
+export async function addPhotoToReceiptDraft(userId: string, previous: unknown, rawInput: unknown): Promise<AddPhotoOutcome> {
+  const parsed = DraftSchema.safeParse(previous);
+  if (!parsed.success) return { ok: false, error: "invalid-draft" };
+
+  const outcome = await extractPurchases("receipt", rawInput, userId);
+  if (!outcome.ok || outcome.result.kind !== "draft") return outcome;
+
+  const reasons = whyDifferentReceipt(parsed.data, outcome.result.draft);
+  if (reasons.length > 0) return { ok: false, error: "different-receipt", reasons, photoDraft: outcome.result.draft };
+  return mergeReceiptDrafts(userId, parsed.data, outcome.result.draft);
+}
+
+/** Adds one draft to another and checks the result for duplicates. Both come from the browser, so both are checked. */
+export async function mergeReceiptDrafts(userId: string, previous: unknown, photoDraft: unknown): Promise<AddPhotoOutcome> {
+  const first = DraftSchema.safeParse(previous);
+  const second = DraftSchema.safeParse(photoDraft);
+  if (!first.success || !second.success) return { ok: false, error: "invalid-draft" };
+  const merged: Draft = mergeDrafts(first.data, second.data);
+  return { ok: true, result: { kind: "draft", draft: await createDuplicateChecker(loadForDuplicates)(merged, userId) } };
+}
 
 /**
  * After a reviewed draft was stored, remember what the user taught us: how
