@@ -24,3 +24,18 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+/*
+ * iOS Safari zooms into any field whose text is smaller than 16px when it is
+ * tapped, and stays zoomed. Fields in the app use 14px text (text-sm), so on a
+ * touch screen they are kept at 16px. (Switching zoom off instead would stop
+ * people who need to zoom.) This sits outside Tailwind's layers on purpose, so
+ * it wins over the text-sm classes.
+ */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
