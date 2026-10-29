@@ -5,7 +5,8 @@ import { AuthForm } from "./auth-form";
 
 /** Someone who is already signed in has no use for the login page. Reads the cookie, so it sits in its own Suspense. */
 async function SkipIfSignedIn() {
-  if (await getCurrentUser()) redirect("/dashboard");
+  const user = await getCurrentUser();
+  if (user) redirect(user.approved ? "/dashboard" : "/pending");
   return null;
 }
 

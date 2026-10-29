@@ -12,6 +12,7 @@
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
     "claim-demo": "tsx --env-file=.env.local scripts/claim-demo.ts",
+    "approve": "tsx --env-file=.env.local scripts/approve.ts",
     "db:seed": "tsx --env-file=.env.local scripts/seed.ts",
     "receipt": "tsx --env-file=.env.local scripts/try-receipt.ts",
     "samples": "tsx --env-file=.env.local scripts/review-samples.ts",

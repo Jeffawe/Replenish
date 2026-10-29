@@ -8,32 +8,42 @@ import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { SESSION_COOKIE } from "./client";
+import { isApproved } from "./approval";
 import { createSession, deleteSession, findUserBySession, SESSION_DAYS } from "./sessions";
 
+export { approvalRequired, isApproved } from "./approval";
 export {
+  approveUsers,
   checkCredentials,
   claimAccount,
   createAccount,
   EmailSchema,
   getDefaultUser,
+  listPendingUsers,
   PasswordSchema,
 } from "./accounts";
 
-/** What the rest of the app may know about the signed-in user. */
-export type CurrentUser = { id: string; email: string };
+/** What the rest of the app may know about the signed-in user. `approved` is always true while REQUIRE_APPROVAL is off. */
+export type CurrentUser = { id: string; email: string; approved: boolean };
 
-/** Who is signed in, or null. Looked up once per request, however many components ask. */
+/** Who is signed in (approved or not), or null. Looked up once per request, however many components ask. */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const user = await findUserBySession(token);
-  return user ? { id: user.id, email: user.email } : null;
+  return user ? { id: user.id, email: user.email, approved: isApproved(user) } : null;
 });
 
-/** The signed-in user; anyone else is sent to the login page. Call this first in every server action and data-loading component. */
+/**
+ * The signed-in, approved user; anyone else is sent to the login page, or to
+ * the "waiting for approval" page. Call this first in every server action and
+ * data-loading component: it is what keeps an unapproved account away from the
+ * OCR quota, however it got there.
+ */
 export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (!user.approved) redirect("/pending");
   return user;
 }
 

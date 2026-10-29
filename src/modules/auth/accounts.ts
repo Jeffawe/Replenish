@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { users, type User } from "@/db/schema";
@@ -73,4 +73,26 @@ export async function claimAccount(fromEmail: string, input: { email: string; pa
     .where(eq(users.id, existing.id))
     .returning();
   return { ok: true, user };
+}
+
+/** Approves the accounts with these emails (any case). Returns who was approved and which emails matched no account. */
+export async function approveUsers(emails: string[]): Promise<{ approved: string[]; unknown: string[] }> {
+  const wanted = [...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))];
+  if (wanted.length === 0) return { approved: [], unknown: [] };
+  const rows = await db
+    .update(users)
+    .set({ approvedAt: new Date() })
+    .where(inArray(users.email, wanted))
+    .returning({ email: users.email });
+  const approved = rows.map((row) => row.email);
+  return { approved, unknown: wanted.filter((email) => !approved.includes(email)) };
+}
+
+/** Accounts still waiting, oldest first. */
+export async function listPendingUsers(): Promise<{ email: string; createdAt: Date }[]> {
+  return db
+    .select({ email: users.email, createdAt: users.createdAt })
+    .from(users)
+    .where(isNull(users.approvedAt))
+    .orderBy(asc(users.createdAt));
 }

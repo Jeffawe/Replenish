@@ -18,6 +18,8 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   name: text("name"),
   passwordHash: text("password_hash"),
+  // When the owner let this account use the app. Only checked while REQUIRE_APPROVAL is on.
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

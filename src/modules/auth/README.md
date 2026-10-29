@@ -17,6 +17,15 @@ Accounts with an email and a password, and a cookie that keeps the browser signe
 - **Login errors** never say whether the email or the password was wrong, and a wrong email takes as long as a wrong password.
 - **The API routes and the scripts** have no browser, so they act for `getDefaultUser()`: the account whose email is `INGEST_USER_EMAIL`, or the oldest account if that is unset. The routes still need `INGEST_API_KEY`.
 
+## Approval (a gate, off by default)
+
+Set `REQUIRE_APPROVAL=1` in `.env.local` (restart the server) and a new account can sign up and sign in but nothing more: it sees only `/pending` ("Waiting for approval"). It exists to protect the Google Vision quota.
+
+- **Where it's enforced**: in `requireUser()`, so every server action and data-loading component that already starts with it is covered at once, including the receipt actions that call OCR. Calling an action directly doesn't get around it. Don't add a new action or data loader that skips `requireUser()`. The "+" button never renders for an unapproved account.
+- **Approving**: `users.approved_at` set means approved. `npm run approve -- a@x.com b@y.com` sets it (emails in any case, many at once); `npm run approve -- --pending` lists who is waiting. There is no revoke command; clear `approved_at` by hand.
+- **Existing accounts** were all approved by the migration. An account made while the gate is off has no `approved_at`, so it will be waiting if the gate is switched on later.
+- The HTTP API is unaffected: it has its own key and acts for the default account.
+
 ## Claiming the original demo data
 
 Before accounts there was one hard-coded user, `demo@replenish.local`, who owns everything saved so far. `npm run claim-demo -- you@example.com` asks for a password (typed hidden) and gives that row your email and password, so nothing is copied or moved. Run it once.

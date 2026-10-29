@@ -7,6 +7,7 @@ import {
   createAccount,
   EmailSchema,
   endSession,
+  isApproved,
   PasswordSchema,
   startSession,
 } from "@/modules/auth";
@@ -37,7 +38,7 @@ export async function signUpAction(_previous: AuthState, formData: FormData): Pr
     return { email: parsed.data.email, fieldErrors: { email: "There's already an account with that email. Log in instead?" } };
   }
   await startSession(outcome.user.id);
-  redirect("/dashboard");
+  redirect(isApproved(outcome.user) ? "/dashboard" : "/pending");
 }
 
 export async function logInAction(_previous: AuthState, formData: FormData): Promise<AuthState> {
@@ -45,7 +46,7 @@ export async function logInAction(_previous: AuthState, formData: FormData): Pro
   const user = parsed.success ? await checkCredentials(parsed.data.email, parsed.data.password) : null;
   if (!user) return { email: typedEmail(formData), error: "That email and password don't match an account." };
   await startSession(user.id);
-  redirect("/dashboard");
+  redirect(isApproved(user) ? "/dashboard" : "/pending");
 }
 
 export async function logOutAction(): Promise<void> {
