@@ -16,7 +16,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
-import { getDemoUser } from "@/lib/demo-user";
+import { getDefaultUser } from "@/modules/auth/accounts";
 import { loadDictionary, lookupProductCodes } from "@/modules/dictionary";
 import { createModelEmbedder } from "@/modules/ingestion/receipt/encoder-model";
 import { createReceiptExtractor } from "@/modules/ingestion/receipt/extractor";
@@ -59,7 +59,7 @@ async function main() {
   }
   const tally = { calls: 0, hits: 0 };
 
-  const user = await getDemoUser();
+  const user = await getDefaultUser();
   const products = await listProductSummaries(user.id);
   const extractor = createReceiptExtractor({
     ocr: cachedEngine(createGoogleVisionEngine(), fresh, tally),

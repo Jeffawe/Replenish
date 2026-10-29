@@ -195,7 +195,7 @@ browser: preview ─▶ Add ─▶ shrink photo ─▶ extractAction ─▶ OCR 
 - A retry needs the **same** idempotency key. A sender that makes a new key for a retry creates a duplicate.
 - The key must identify the exact content. Reusing it for a different batch makes lines that share a line number look like duplicates.
 - Unit comparison only tolerates case and a trailing plural. `ct` against `rolls` is rejected, so senders normalize units.
-- Everything is stored for a single demo user until real accounts exist.
+- The HTTP API has no signed-in browser, so it stores for one account: `INGEST_USER_EMAIL`, or the oldest account if that is unset. The in-app flows use whoever is signed in.
 - Receipts: the parser reads English-style layouts (name left, price right, a subtotal or total below the items). Two-column or heavily wrapped receipts, and ones with no readable subtotal, will need the review step.
 - Receipts: a pack size like `12CT` multiplies the quantity, whatever the product's unit is. A `6PK` of cans stored against a product counted in bottles shows 6; the user can fix it in review.
 - Receipts: the dictionary matches whole words, so OCR misreads ("FOOG" for "FOOD") and rare abbreviations fall through to the receipt's wording, and a short abbreviation can mislead ("CHS" reads as cheese). Each fix the user makes is remembered as an alias.

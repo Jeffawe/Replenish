@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AddPurchases } from "./add-purchases/add-purchases";
 import { AddPurchasesPlaceholder } from "./add-purchases/add-purchases-dialog";
+import { logOutAction } from "@/app/auth/actions";
 import { Questions } from "@/app/questions/questions";
 import { InventoryList } from "./inventory-list";
 
@@ -24,6 +25,11 @@ export default function DashboardPage() {
           <Suspense fallback={<AddPurchasesPlaceholder />}>
             <AddPurchases />
           </Suspense>
+          <form action={logOutAction}>
+            <button type="submit" className="rounded-lg px-2 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
+              Sign out
+            </button>
+          </form>
         </div>
       </header>
       <Suspense fallback={<InventorySkeleton />}>

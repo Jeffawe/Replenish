@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { checkApiAccess } from "@/lib/api-access";
-import { getDemoUser } from "@/lib/demo-user";
+import { getDefaultUser } from "@/modules/auth";
 import { submitBatch } from "@/modules/ingestion";
 
 /**
@@ -19,8 +19,8 @@ export async function POST(request: Request) {
     return Response.json({ error: "Body must be valid JSON" }, { status: 400 });
   }
 
-  // Everything is stored for the demo user until real accounts exist.
-  const user = await getDemoUser();
+  // The API has no signed-in browser, so it stores for the default account (INGEST_USER_EMAIL).
+  const user = await getDefaultUser();
   const outcome = await submitBatch(user.id, body);
   if (!outcome.ok) {
     return Response.json({ error: "Invalid purchase batch", issues: outcome.issues }, { status: 400 });

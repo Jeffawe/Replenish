@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getDemoUser } from "@/lib/demo-user";
+import { requireUser } from "@/modules/auth";
 import { mergeProducts, saveProductEdit } from "@/modules/inventory/service";
 import { ProductEditSchema } from "@/modules/inventory/types";
 
@@ -19,7 +19,7 @@ export async function editProductAction(
   formData: FormData,
 ): Promise<EditProductState> {
   // Server Functions can be called directly, so identify the user here too.
-  const user = await getDemoUser();
+  const user = await requireUser();
 
   const parsed = ProductEditSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -50,7 +50,7 @@ export type MergeProductsState = { status: "idle" | "error"; message?: string };
 
 /** Merges one product into another (see mergeProducts). On success the merged product is gone, so its dialog closes with it. */
 export async function mergeProductsAction(fromId: unknown, intoId: unknown): Promise<MergeProductsState> {
-  const user = await getDemoUser();
+  const user = await requireUser();
   const ids = z.object({ fromId: z.uuid(), intoId: z.uuid() }).safeParse({ fromId, intoId });
   if (!ids.success) return { status: "error", message: "Choose a product to merge into." };
 

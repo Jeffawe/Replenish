@@ -1,5 +1,5 @@
 import { checkApiAccess } from "@/lib/api-access";
-import { getDemoUser } from "@/lib/demo-user";
+import { getDefaultUser } from "@/modules/auth";
 import { listProductSummaries } from "@/modules/inventory/ingest";
 
 /**
@@ -11,6 +11,6 @@ export async function GET(request: Request) {
   const denied = checkApiAccess(request);
   if (denied) return denied;
 
-  const user = await getDemoUser();
+  const user = await getDefaultUser();
   return Response.json({ products: await listProductSummaries(user.id) });
 }

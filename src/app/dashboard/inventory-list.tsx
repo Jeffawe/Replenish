@@ -1,9 +1,9 @@
-import { getDemoUser } from "@/lib/demo-user";
+import { requireUser } from "@/modules/auth";
 import { getInventory } from "@/modules/inventory/service";
 import { InventoryCard, getStatus } from "./inventory-card";
 
 export async function InventoryList() {
-  const user = await getDemoUser();
+  const user = await requireUser();
   const items = await getInventory(user.id);
   // Read after the queries so the clock is a request-time value.
   const now = new Date();
@@ -13,8 +13,7 @@ export async function InventoryList() {
       <div className="rounded-2xl border border-dashed border-zinc-300 p-10 text-center dark:border-zinc-700">
         <h2 className="text-base font-semibold">No products yet</h2>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Tap the + button above to add a receipt and what you bought shows up here. Or run{" "}
-          <code>npm run db:seed</code> to load demo data.
+          Tap the + button above to add a receipt and what you bought shows up here.
         </p>
       </div>
     );

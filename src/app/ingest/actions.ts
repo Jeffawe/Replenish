@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getDemoUser } from "@/lib/demo-user";
+import { requireUser } from "@/modules/auth";
 import {
   addPhotoToReceiptDraft,
   mergeReceiptDrafts,
@@ -30,7 +30,7 @@ export type ExtractActionOutcome =
 /** `source` picks the producer; the form's fields are its raw input. Stores nothing. */
 export async function extractAction(source: string, formData: FormData): Promise<ExtractActionOutcome> {
   // Server Functions can be called directly, so identify the user here.
-  const user = await getDemoUser();
+  const user = await requireUser();
   try {
     return await extractPurchases(source, Object.fromEntries(formData), user.id);
   } catch (error) {
@@ -42,7 +42,7 @@ export async function extractAction(source: string, formData: FormData): Promise
 
 /** Another photo of the receipt being reviewed: its lines are added to `previous`, the draft the user already has. */
 export async function addPhotoAction(previous: unknown, formData: FormData): Promise<AddPhotoOutcome | { ok: false; error: "failed"; message: string }> {
-  const user = await getDemoUser();
+  const user = await requireUser();
   try {
     return await addPhotoToReceiptDraft(user.id, previous, Object.fromEntries(formData));
   } catch (error) {
@@ -54,7 +54,7 @@ export async function addPhotoAction(previous: unknown, formData: FormData): Pro
 
 /** "Use it anyway" for a photo that looked like a different receipt: merges the draft already read from it, without reading it again. */
 export async function mergePhotoAction(previous: unknown, photoDraft: unknown): Promise<AddPhotoOutcome> {
-  const user = await getDemoUser();
+  const user = await requireUser();
   return mergeReceiptDrafts(user.id, previous, photoDraft);
 }
 
@@ -74,7 +74,7 @@ export async function submitAction(
   batch: unknown,
   review?: { sources: (string | null)[]; skipped: string[]; codes?: (string | null)[]; store?: string | null },
 ) {
-  const user = await getDemoUser();
+  const user = await requireUser();
   const outcome = await submitBatch(user.id, batch);
   if (!outcome.ok) return outcome;
 

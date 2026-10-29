@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { checkApiAccess } from "@/lib/api-access";
-import { getDemoUser } from "@/lib/demo-user";
+import { getDefaultUser } from "@/modules/auth";
 import { createSimulatedInbox, syncEmailInbox } from "@/modules/ingestion";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   // account is connected; until then the simulated inbox is empty.
   const inbox = createSimulatedInbox();
 
-  const user = await getDemoUser();
+  const user = await getDefaultUser();
   let report;
   try {
     report = await syncEmailInbox(user.id, since, inbox);

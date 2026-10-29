@@ -1,11 +1,11 @@
-import { getDemoUser } from "@/lib/demo-user";
+import { requireUser } from "@/modules/auth";
 import { CHECK_IN, getQuestions, summarize } from "@/modules/questions";
 import { CheckIn } from "./check-in";
 import { QuestionsButton } from "./questions-button";
 
 /** The questions button and the occasional check-in, loaded together. */
 export async function Questions() {
-  const user = await getDemoUser();
+  const user = await requireUser();
   const questions = await getQuestions(user.id);
   const { products, important } = summarize(questions);
   return (

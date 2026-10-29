@@ -8,7 +8,7 @@
  * otherwise wait for the download. The model is kept in ENCODER_CACHE_DIR if
  * set, otherwise inside node_modules.
  */
-import { getDemoUser } from "@/lib/demo-user";
+import { getDefaultUser } from "@/modules/auth/accounts";
 import { listAliases } from "@/modules/inventory/aliases";
 import { listProductSummaries } from "@/modules/inventory/ingest";
 import { loadDictionary } from "@/modules/dictionary";
@@ -26,7 +26,7 @@ async function main() {
     return;
   }
   if (command === "try" && rest.length > 0) {
-    const user = await getDemoUser();
+    const user = await getDefaultUser();
     const [aliases, products, dictionary] = await Promise.all([listAliases(user.id), listProductSummaries(user.id), loadDictionary()]);
     const names = new Map(products.map((p) => [p.id, p.name]));
     const references: Reference[] = [

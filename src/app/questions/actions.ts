@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getDemoUser } from "@/lib/demo-user";
+import { requireUser } from "@/modules/auth";
 import { answerQuestion, snoozeQuestion, undoAnswer, type AnswerOutcome } from "@/modules/questions";
 
 /** The questions' three actions: answer one, take an answer back, and "not now". Each refreshes the dashboard. */
@@ -30,7 +30,7 @@ const UndoSchema = z.discriminatedUnion("type", [
 
 export async function answerAction(answer: unknown): Promise<AnswerOutcome | { status: "invalid" }> {
   // Server Functions can be called directly, so identify the user and check the input here.
-  const user = await getDemoUser();
+  const user = await requireUser();
   const parsed = AnswerSchema.safeParse(answer);
   if (!parsed.success) return { status: "invalid" };
   const outcome = await answerQuestion(user.id, parsed.data);
@@ -39,7 +39,7 @@ export async function answerAction(answer: unknown): Promise<AnswerOutcome | { s
 }
 
 export async function undoAction(productId: unknown, undo: unknown): Promise<void> {
-  const user = await getDemoUser();
+  const user = await requireUser();
   const id = z.uuid().safeParse(productId);
   const parsed = UndoSchema.safeParse(undo);
   if (!id.success || !parsed.success) return;
@@ -48,7 +48,7 @@ export async function undoAction(productId: unknown, undo: unknown): Promise<voi
 }
 
 export async function snoozeAction(productId: unknown, kind: unknown): Promise<void> {
-  const user = await getDemoUser();
+  const user = await requireUser();
   const id = z.uuid().safeParse(productId);
   const parsedKind = Kind.safeParse(kind);
   if (!id.success || !parsedKind.success) return;
