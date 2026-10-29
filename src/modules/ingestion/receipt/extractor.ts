@@ -36,6 +36,11 @@ export interface ReceiptDeps {
   lookup?(codes: string[]): Promise<Map<string, CodeLookup>>;
   /** Finds the confirmed wording a line is closest to, for lines nothing else can place. May fail; matching goes on without it. */
   similar?: SimilarWordings;
+  /**
+   * Called before each photo goes to the OCR service, which costs quota. Throw an ExtractionError to refuse (the
+   * user is out of photos). Return a function that gives the photo back if the read then fails.
+   */
+  beforeRead?(userId: string): Promise<() => Promise<void>>;
   /** Told what every photo read produced, for keeping test samples. Must not throw; a failure here can't fail a read. */
   record?(sample: ReadSample): Promise<void>;
 }
@@ -239,7 +244,15 @@ export function createReceiptExtractor(deps: ReceiptDeps): Extractor<ReceiptInpu
     input: ReceiptInputSchema,
     async extract({ image }, ctx) {
       const bytes = new Uint8Array(await image.arrayBuffer());
-      const read = await deps.ocr.read(bytes);
+      const giveBack = await deps.beforeRead?.(ctx.userId);
+      let read;
+      try {
+        read = await deps.ocr.read(bytes);
+      } catch (error) {
+        // The service didn't read it (down, refused), so it shouldn't use up one of the user's photos.
+        await giveBack?.().catch(() => {});
+        throw error;
+      }
       const result = await draftFrom(bytes, read, ctx);
       await deps.record?.({
         id: sha256(bytes).slice(0, 16),

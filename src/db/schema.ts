@@ -20,8 +20,24 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash"),
   // When the owner let this account use the app. Only checked while REQUIRE_APPROVAL is on.
   approvedAt: timestamp("approved_at", { withTimezone: true }),
+  // Receipt photos this user may read per calendar month. Null = the RECEIPT_LIMIT default. Edit freely in Neon.
+  receiptLimit: integer("receipt_limit"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// One row per receipt photo sent to Google Vision, to keep each user inside their monthly limit.
+// Charged before the call and taken back if Google fails, so it counts calls that cost quota.
+export const receiptReads = pgTable(
+  "receipt_reads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("receipt_reads_user_date_idx").on(t.userId, t.createdAt)],
+);
 
 // A signed-in browser. Only the hash of the cookie's token is stored, so a
 // leaked table can't be used to sign in.

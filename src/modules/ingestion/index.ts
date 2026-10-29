@@ -15,7 +15,9 @@ import {
   listProductSummaries,
   listPurchasesNear,
 } from "@/modules/inventory/ingest";
+import { refundReceiptRead, reserveReceiptRead } from "@/modules/inventory/receipt-reads";
 import type { IngestResult } from "@/core/purchase-batch";
+import { limitReachedMessage } from "@/core/receipt-limit";
 import { learnFromSave, loadDictionary, lookupProductCodes } from "@/modules/dictionary";
 import { lessonsFromReview, type Review } from "./aliases";
 import { emailExtractor } from "./email/extractor";
@@ -28,6 +30,7 @@ import { createSampleStore, samplesFolder } from "./receipt/samples";
 import { createSimilarWordings } from "./receipt/similar-wordings";
 import { createRegistry } from "./registry";
 import { DraftSchema } from "./draft-schema";
+import { ExtractionError } from "./types";
 import type { Draft } from "./types";
 import { mergeDrafts } from "./receipt/merge";
 import { whyDifferentReceipt } from "./receipt/same-receipt";
@@ -44,6 +47,12 @@ const samples = process.env.SAMPLES_DIR ? createSampleStore(samplesFolder(proces
 const getExtractor = createRegistry([
   createReceiptExtractor({
     ocr: createGoogleVisionEngine(),
+    // Each photo is one Vision call. Everyone has a monthly limit (see src/core/receipt-limit.ts).
+    beforeRead: async (userId) => {
+      const reservation = await reserveReceiptRead(userId);
+      if (!reservation.ok) throw new ExtractionError(limitReachedMessage(reservation.limit, new Date()));
+      return () => refundReceiptRead(reservation.id);
+    },
     loadAliases: listAliases,
     loadIgnored: listIgnoredWordings,
     loadDictionary,

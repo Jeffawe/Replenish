@@ -131,6 +131,46 @@ describe("lines nothing else can place", () => {
   });
 });
 
+describe("the monthly photo limit", () => {
+  function limited(beforeRead: NonNullable<ReceiptDeps["beforeRead"]>, read = vi.fn<ReceiptDeps["ocr"]["read"]>().mockResolvedValue({ text: "", words: ocrOf(RECEIPT) })) {
+    const extractor = createReceiptExtractor({ ocr: { read }, loadAliases: async () => [], loadIgnored: async () => [], beforeRead });
+    return { extractor, read };
+  }
+  const photo = () => new File(["photo"], "receipt.jpg", { type: "image/jpeg" });
+
+  it("never calls the OCR service for a user who is out of photos", async () => {
+    const { extractor, read } = limited(async () => {
+      throw new ExtractionError("You've used all 10 of your receipt photos for this month.");
+    });
+    await expect(extractor.extract({ image: photo() }, ctx())).rejects.toThrow(/used all 10/);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("keeps the charge when the photo is read", async () => {
+    const giveBack = vi.fn(async () => {});
+    const { extractor, read } = limited(async () => giveBack);
+    await extractor.extract({ image: photo() }, ctx());
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(giveBack).not.toHaveBeenCalled();
+  });
+
+  it("gives the photo back when the OCR service fails", async () => {
+    const giveBack = vi.fn(async () => {});
+    const read = vi.fn<ReceiptDeps["ocr"]["read"]>().mockRejectedValue(new ExtractionError("Couldn't reach Google Vision."));
+    const { extractor } = limited(async () => giveBack, read);
+    await expect(extractor.extract({ image: photo() }, ctx())).rejects.toThrow(/Google Vision/);
+    expect(giveBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("still reports the OCR failure if giving the photo back fails too", async () => {
+    const read = vi.fn<ReceiptDeps["ocr"]["read"]>().mockRejectedValue(new ExtractionError("Couldn't reach Google Vision."));
+    const { extractor } = limited(async () => async () => {
+      throw new Error("database down");
+    }, read);
+    await expect(extractor.extract({ image: photo() }, ctx())).rejects.toThrow(/Google Vision/);
+  });
+});
+
 describe("test samples", () => {
   it("hands the photo, its OCR and the draft to whoever keeps samples", async () => {
     const record = vi.fn<NonNullable<ReceiptDeps["record"]>>().mockResolvedValue();

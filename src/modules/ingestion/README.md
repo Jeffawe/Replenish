@@ -38,6 +38,16 @@ Inventory never imports this folder.
 
 Inside `receipt/`, in the order a photo goes through them: `ocr/` (Google Vision), `layout.ts`, `parse.ts`, the dictionary (a separate module), `match.ts`, `extractor.ts`. `merge.ts` adds a second photo's draft to the first, and `totals.ts` holds the receipt key and the adding-up check they share. `samples.ts` and `sample-review.ts` are the local test-sample store and its comparison.
 
+## The monthly receipt limit
+
+Every receipt photo sent to Google Vision costs quota, so each user gets a number of photos per **UTC calendar month** (a photo added to a receipt under review counts too). It is checked in `index.ts` (`beforeRead`) *before* the Vision call, and the photo is given back if Google then fails.
+
+- A user's limit: `users.receipt_limit`. Edit it in the Neon dashboard (Tables view, or the SQL editor). Empty means the default.
+- The default: `RECEIPT_LIMIT` in `.env.local` (10 if unset or not a whole number).
+- Usage is the rows in `receipt_reads` (one per photo). To see it: `select u.email, count(r.id) from users u left join receipt_reads r on r.user_id = u.id and r.created_at >= date_trunc('month', now() at time zone 'utc') group by u.email;`
+- Giving someone more: `update users set receipt_limit = 50 where email = 'a@b.com';` (0 turns reading off for them).
+- The numbers and the message are in `src/core/receipt-limit.ts`; the charge is in `inventory/receipt-reads.ts`.
+
 ## Adding a way of ingesting
 
 Write an `Extractor` (see `types.ts`), register it in `index.ts`. Nothing outside this folder changes unless it needs its own trigger.
