@@ -42,8 +42,15 @@ export interface PredictConfig {
   /** Confidence lost per pack-size of average past error: factor = 1 - penalty * averageError. */
   accuracyPenalty: number;
   accuracyFloor: number;
-  /** Starting-stock factors: user-confirmed, known leftover, or assumed to be 0. */
+  /**
+   * A stock count further than this many usual purchases from what we
+   * predicted at the time is "disputed": still used (the user is looking at the
+   * shelf), but trusted less until another answer backs it up.
+   */
+  disputedCountPacks: number;
+  /** Starting-stock factors: user-confirmed, disputed (see above), known leftover, or assumed to be 0. */
   startingStockConfirmed: number;
+  startingStockDisputed: number;
   startingStockKnown: number;
   startingStockAssumed: number;
 }
@@ -62,7 +69,9 @@ export const DEFAULT_PREDICT_CONFIG: PredictConfig = {
   accuracyWindow: 5,
   accuracyPenalty: 2,
   accuracyFloor: 0.3,
+  disputedCountPacks: 1,
   startingStockConfirmed: 1,
+  startingStockDisputed: 0.6,
   startingStockKnown: 0.95,
   startingStockAssumed: 0.85,
 };
@@ -94,7 +103,7 @@ export interface PredictInput {
   userLowStockThresholdDays?: number;
 }
 
-type StartingStock = "confirmed" | "known" | "assumed";
+type StartingStock = "confirmed" | "disputed" | "known" | "assumed";
 
 interface Anchor {
   kind: "purchase" | "correction";
@@ -150,7 +159,12 @@ export function predict(
     rateSource: source,
     lowStockThresholdDays: thresholdDays,
     purchaseCount: purchases.length,
-    anchor: anchor && { kind: anchor.kind, at: anchor.at, quantity: anchor.quantity },
+    anchor: anchor && {
+      kind: anchor.kind,
+      at: anchor.at,
+      quantity: anchor.quantity,
+      disputed: anchor.startingStock === "disputed",
+    },
   };
 
   if (ratePerDay === null) {
@@ -278,14 +292,18 @@ function findAnchor(
   const lastPurchase = purchases[purchases.length - 1];
   const lastCorrection = corrections[corrections.length - 1];
 
-  // A correction made after the purchase is the user's own number: it wins.
+  // A correction made after the purchase is the user's own number: it wins,
+  // though one far from what we expected may be a typo, so it is trusted less.
   if (lastCorrection && (!lastPurchase || lastCorrection.recordedAt >= lastPurchase.purchasedAt)) {
+    const disputed = isDisputed(lastCorrection, product, config);
     return {
       kind: "correction",
       at: lastCorrection.recordedAt,
       quantity: lastCorrection.remainingQuantity,
-      startingStock: "confirmed",
-      detail: "You told us how much was left.",
+      startingStock: disputed ? "disputed" : "confirmed",
+      detail: disputed
+        ? "You told us how much was left, but it was far from what we expected, so we'll check it with you."
+        : "You told us how much was left.",
     };
   }
   if (!lastPurchase) return null;
@@ -322,6 +340,13 @@ function findAnchor(
     startingStock,
     detail,
   };
+}
+
+/** Whether a stock count is far enough from what we predicted at the time that it may be a mistake. */
+function isDisputed(correction: CorrectionPoint, product: PredictProduct, config: PredictConfig): boolean {
+  if (correction.estimatedAtTime === null || product.normalPurchaseQty <= 0) return false;
+  const gap = Math.abs(correction.remainingQuantity - correction.estimatedAtTime);
+  return gap > config.disputedCountPacks * product.normalPurchaseQty;
 }
 
 interface ConfidenceContext {
@@ -422,6 +447,7 @@ function buildConfidenceFactors(ctx: ConfidenceContext): ConfidenceFactor[] {
   // 6. How well we know the stock level the estimate starts from.
   const startingValue = {
     confirmed: config.startingStockConfirmed,
+    disputed: config.startingStockDisputed,
     known: config.startingStockKnown,
     assumed: config.startingStockAssumed,
   }[anchor.startingStock];

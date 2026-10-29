@@ -42,6 +42,12 @@ export const products = pgTable(
     typicalLeftoverAtPurchase: doublePrecision("typical_leftover_at_purchase"),
     // Overrides the user-level low-stock threshold for this product.
     lowStockThresholdDays: integer("low_stock_threshold_days"),
+    // When the user said yes, keep track of this. Null means a product a
+    // receipt created that nobody has checked yet, so the app asks about it.
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    // When the user said not to track it. Hidden from the dashboard and from
+    // matching, never deleted; buying it again brings it back.
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("products_user_name_idx").on(t.userId, t.normalizedName)],
@@ -143,6 +149,25 @@ export const inventoryCorrections = pgTable(
   (t) => [index("inventory_corrections_product_date_idx").on(t.productId, t.recordedAt)],
 );
 
+// "Not now" on a question: that kind of question about that product stays
+// quiet until `until`. The questions themselves are never stored; they are
+// worked out from the data each time.
+export const questionSnoozes = pgTable(
+  "question_snoozes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    until: timestamp("until", { withTimezone: true }).notNull(),
+  },
+  (t) => [uniqueIndex("question_snoozes_user_product_kind_idx").on(t.userId, t.productId, t.kind)],
+);
+
 export type User = typeof users.$inferSelect;
 export type Product = typeof products.$inferSelect;
 export type NewProduct = typeof products.$inferInsert;
@@ -151,3 +176,4 @@ export type PurchaseEventRow = typeof purchaseEvents.$inferSelect;
 export type NewPurchaseEventRow = typeof purchaseEvents.$inferInsert;
 export type InventoryCorrection = typeof inventoryCorrections.$inferSelect;
 export type NewInventoryCorrection = typeof inventoryCorrections.$inferInsert;
+export type QuestionSnooze = typeof questionSnoozes.$inferSelect;

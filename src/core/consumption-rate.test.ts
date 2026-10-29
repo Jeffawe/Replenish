@@ -220,15 +220,25 @@ describe("calculateConsumptionRate: learning from corrections", () => {
     expect(result.ratePerDay).toBeCloseTo(0.5, 5);
   });
 
-  it("never flags a correction stretch as a purchase outlier", () => {
-    // Four purchase intervals at 0.43/day plus a count that disagrees sharply.
-    const result = withCounts(
-      [buy(0), buy(28), buy(56), buy(84), buy(112)],
-      [count(120, 0)],
-      120,
-    );
+  it("never flags a stock count that is only a little off as a purchase outlier", () => {
+    // Four purchase intervals at 0.43/day; the count says 6 left on day 120, so 0.75/day: unusual, but believable.
+    const result = withCounts([buy(0), buy(28), buy(56), buy(84), buy(112)], [count(120, 6)], 120);
     const stretch = result.intervals.find((i) => i.kind === "correction")!;
     expect(stretch.excluded).toBeNull();
+  });
+
+  it("leaves out a count that looks mistyped, and keeps the purchase gaps it would have replaced", () => {
+    // Steady 0.43/day; then "0 left" 8 days after buying 12 means 1.5/day, 3.5 times the usual rate.
+    const purchases = [buy(0), buy(28), buy(56), buy(84), buy(112), buy(140)];
+    const result = withCounts(purchases, [count(120, 0)], 140);
+    expect(result.intervals.find((i) => i.kind === "correction")!.excluded).toBe("unlikely-count");
+    expect(result.intervals.filter((i) => i.excluded === "covered-by-correction")).toHaveLength(0);
+    expect(result.ratePerDay).toBeCloseTo(12 / 28, 5);
+  });
+
+  it("does not judge a count before there is enough history to judge it by", () => {
+    const result = withCounts([buy(0), buy(28)], [count(36, 0)], 36);
+    expect(result.intervals.find((i) => i.kind === "correction")!.excluded).toBeNull();
   });
 
   it("falls back to using everything when outlier flags would leave nothing", () => {

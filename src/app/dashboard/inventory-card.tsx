@@ -41,6 +41,7 @@ const EXCLUDED_TEXT: Record<ExcludedReason, string> = {
   "possible-early-purchase": "Ignored: bought unusually early",
   "covered-by-correction": "Replaced by your stock count",
   "stock-increased": "Ignored: stock went up with no purchase recorded",
+  "unlikely-count": "Ignored: this count looks like a typo next to everything else",
   "too-short": "Ignored: too short to measure reliably",
 };
 

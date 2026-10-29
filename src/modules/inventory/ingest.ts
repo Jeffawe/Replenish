@@ -1,4 +1,4 @@
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import type {
   IngestResult,
   LineResult,
@@ -84,6 +84,7 @@ export async function ingestPurchaseBatch(
   );
   const stored = inserts.length > 0 ? await db.batch(inserts as [(typeof inserts)[0], ...typeof inserts]) : [];
   await addNewBrands(accepted);
+  await restoreArchived(accepted.filter((_, i) => stored[i]?.length).map(({ product }) => product));
 
   const items: LineResult[] = [];
   for (const [index, reason] of rejected) items.push({ index, result: "rejected", reason });
@@ -138,6 +139,12 @@ export async function ingestPurchaseBatch(
   return { status, items };
 }
 
+/** Buying a product the user had hidden ("don't track this") brings it back, rather than hiding the purchase too. */
+async function restoreArchived(bought: Product[]) {
+  const ids = [...new Set(bought.filter((product) => product.archivedAt !== null).map((product) => product.id))];
+  if (ids.length > 0) await db.update(products).set({ archivedAt: null }).where(inArray(products.id, ids));
+}
+
 /**
  * A product is bought in whatever brands its purchases name, so a brand seen
  * for the first time is added to the product's list.
@@ -158,7 +165,9 @@ async function addNewBrands(accepted: { line: Line; product: Product }[]) {
 /** The user's existing products, for a sender to match its lines against before sending. */
 export async function listProductSummaries(userId: string): Promise<ProductSummary[]> {
   const rows = await listProducts(userId);
+  // Hidden products aren't offered for matching; a line naming one exactly still finds it and brings it back.
   return rows
+    .filter((row) => row.archivedAt === null)
     .map(({ id, name, brand, category, unit, normalPurchaseQty }) => ({
       id,
       name,

@@ -58,10 +58,12 @@ export async function getInventory(userId: string, now?: Date): Promise<Inventor
     listPurchaseEvents(userId),
     listCorrections(userId),
   ]);
+  // Products the user said not to track stay stored but out of sight.
+  const tracked = productRows.filter((product) => product.archivedAt === null);
   // Read the clock after the queries so it is a request-time value.
   const at = now ?? new Date();
 
-  const items = productRows.map((product) =>
+  const items = tracked.map((product) =>
     buildItem(
       product,
       purchaseRows.filter((p) => p.productId === product.id),
@@ -91,15 +93,7 @@ export async function saveProductEdit(
   const product = await getProduct(userId, edit.productId);
   if (!product) return "not-found";
 
-  let estimatedAtTime: number | null = null;
-  if (edit.remainingNow !== null) {
-    const [purchases, corrections] = await Promise.all([
-      listProductPurchaseEvents(userId, product.id),
-      listProductCorrections(userId, product.id),
-    ]);
-    estimatedAtTime = buildItem(product, purchases, corrections, new Date()).estimate
-      .estimatedRemaining;
-  }
+  const estimatedAtTime = edit.remainingNow === null ? null : await currentGuess(userId, product);
 
   const updateProduct = db
     .update(products)
@@ -133,4 +127,39 @@ export async function saveProductEdit(
     ...(edit.remainingNow !== null ? [recordCount] : []),
   ]);
   return "saved";
+}
+
+/** What we predict is left right now, to stamp on a stock count so past accuracy can be measured. */
+async function currentGuess(userId: string, product: Product): Promise<number | null> {
+  const [purchases, corrections] = await Promise.all([
+    listProductPurchaseEvents(userId, product.id),
+    listProductCorrections(userId, product.id),
+  ]);
+  return buildItem(product, purchases, corrections, new Date()).estimate.estimatedRemaining;
+}
+
+/**
+ * Records one stock count ("I have about 4 left"), stamped with what we
+ * predicted just before it. Returns the count's id so it can be undone.
+ */
+export async function recordStockCount(
+  userId: string,
+  productId: string,
+  remainingQuantity: number,
+): Promise<{ correctionId: string } | "not-found"> {
+  const product = await getProduct(userId, productId);
+  if (!product) return "not-found";
+  const estimatedAtTime = await currentGuess(userId, product);
+  const [row] = await db
+    .insert(inventoryCorrections)
+    .values({ userId, productId, remainingQuantity, estimatedAtTime })
+    .returning({ id: inventoryCorrections.id });
+  return { correctionId: row.id };
+}
+
+/** Takes back a stock count the user just gave ("Undo"). The latest answer always wins otherwise. */
+export async function undoStockCount(userId: string, correctionId: string): Promise<void> {
+  await db
+    .delete(inventoryCorrections)
+    .where(and(eq(inventoryCorrections.id, correctionId), eq(inventoryCorrections.userId, userId)));
 }

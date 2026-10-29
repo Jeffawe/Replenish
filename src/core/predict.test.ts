@@ -52,7 +52,7 @@ describe("predict: the worked example", () => {
   });
 
   it("anchors on the latest purchase", () => {
-    expect(estimate.anchor).toEqual({ kind: "purchase", at: day(56), quantity: 12 });
+    expect(estimate.anchor).toEqual({ kind: "purchase", at: day(56), quantity: 12, disputed: false });
     expect(estimate.purchaseCount).toBe(3);
   });
 });
@@ -69,7 +69,7 @@ describe("predict: starting stock", () => {
 
   it("uses a correction newer than the last purchase as the anchor", () => {
     const estimate = run(75, steady, { corrections: [correction(70, 5)] });
-    expect(estimate.anchor).toEqual({ kind: "correction", at: day(70), quantity: 5 });
+    expect(estimate.anchor).toEqual({ kind: "correction", at: day(70), quantity: 5, disputed: false });
     // The correction also teaches the rate: 7 rolls used in the 14 days since the day-56 purchase.
     expect(estimate.consumptionPerDay).toBeCloseTo((12 + 12 + 7) / (28 + 28 + 14), 5);
     expect(estimate.estimatedRemaining).toBeCloseTo(5 - estimate.consumptionPerDay! * 5, 5);
@@ -252,6 +252,23 @@ describe("predict: confidence", () => {
     const confirmed = run(131, steadyLong, { corrections: [correction(125, 6.4)] });
     expect(confirmed.confidenceFactors.find((f) => f.label === "Starting stock")?.value).toBe(1);
     expect(confirmed.confidence).toBeGreaterThan(run(131, steadyLong).confidence);
+  });
+
+  it("trusts a count far from what we expected less, and marks it for a second look", () => {
+    // We predicted about 6 left; "20" is more than a whole pack (12) away, so maybe a typo for 2.
+    const typo = run(131, steadyLong, { corrections: [correction(125, 20, 6.4)] });
+    expect(typo.estimatedRemaining).toBeGreaterThan(15); // still believed: the user is looking at the shelf
+    expect(typo.anchor?.disputed).toBe(true);
+    expect(typo.confidenceFactors.find((f) => f.label === "Starting stock")?.value).toBeLessThan(1);
+
+    // The same "20" given again, when we now expected about 20, settles it.
+    const confirmed = run(131, steadyLong, { corrections: [correction(125, 20, 6.4), correction(128, 19, 18.7)] });
+    expect(confirmed.anchor?.disputed).toBe(false);
+  });
+
+  it("does not dispute a count that is only somewhat off, or one we had no guess for", () => {
+    expect(run(131, steadyLong, { corrections: [correction(125, 2, 6.4)] }).anchor?.disputed).toBe(false);
+    expect(run(131, steadyLong, { corrections: [correction(125, 20)] }).anchor?.disputed).toBe(false);
   });
 
   it("explains itself with a factor per reason, and the confidence is their product", () => {

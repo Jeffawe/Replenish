@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AddPurchases } from "./add-purchases/add-purchases";
 import { AddPurchasesPlaceholder } from "./add-purchases/add-purchases-dialog";
+import { Questions } from "@/app/questions/questions";
 import { InventoryList } from "./inventory-list";
 
 export const metadata: Metadata = { title: "Inventory · Replenish" };
@@ -16,9 +17,14 @@ export default function DashboardPage() {
             What you have at home, and when it is likely to run out. Most urgent first.
           </p>
         </div>
-        <Suspense fallback={<AddPurchasesPlaceholder />}>
-          <AddPurchases />
-        </Suspense>
+        <div className="flex shrink-0 items-center gap-2">
+          <Suspense fallback={null}>
+            <Questions />
+          </Suspense>
+          <Suspense fallback={<AddPurchasesPlaceholder />}>
+            <AddPurchases />
+          </Suspense>
+        </div>
       </header>
       <Suspense fallback={<InventorySkeleton />}>
         <InventoryList />

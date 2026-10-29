@@ -46,6 +46,12 @@ export interface ConsumptionRateConfig {
   /** An interval rate above this multiple of the median looks like an early top-up. */
   earlyPurchaseRatio: number;
   /**
+   * A stretch measured from the user's stock counts whose rate is this many
+   * times above or below the median looks like a mistyped count. Wider than
+   * the purchase ratios because a count is usually the better evidence.
+   */
+  unlikelyCountRatio: number;
+  /**
    * A stretch between two stock counts shorter than this is ignored: the
    * user's rounding ("about 3") would dominate the result.
    */
@@ -62,6 +68,7 @@ export const DEFAULT_CONSUMPTION_RATE_CONFIG: ConsumptionRateConfig = {
   minIntervalsForOutlierCheck: 4,
   missingPurchaseRatio: 0.6,
   earlyPurchaseRatio: 1.6,
+  unlikelyCountRatio: 2.5,
   minCorrectionStretchDays: 5,
   minIntervalsForError: 3,
 };
@@ -73,6 +80,8 @@ export type ExcludedReason =
   | "covered-by-correction"
   /** Stock went up between two counts with no purchase recorded to explain it. */
   | "stock-increased"
+  /** A stock count implying a usage rate far from everything else, so probably a mistake. */
+  | "unlikely-count"
   | "too-short";
 
 /** One stretch of time with a known amount used; kept so the UI can explain the rate. */
@@ -147,6 +156,9 @@ export function calculateConsumptionRate(
     ).slice(-config.windowCorrections),
   ].sort((a, b) => a.from.getTime() - b.from.getTime());
   if (intervals.length === 0) return EMPTY;
+
+  // Before a count's stretch can replace purchase gaps, check it isn't a mistyped number.
+  flagUnlikelyCounts(intervals, config);
 
   // An exact correction stretch replaces any purchase interval over the same days.
   const stretches = intervals.filter((i) => i.kind === "correction" && i.excluded === null);
@@ -254,8 +266,29 @@ function correctionStretches(
 }
 
 /**
- * Flags purchase intervals far from the median rate. Correction stretches are
- * exact, so they are never flagged. If that would leave nothing, the flags
+ * Flags stock-count stretches far from the median of all the evidence. A count
+ * is normally the best evidence there is, so the bar is wider than for
+ * purchases, but people mistype ("20" for "2"), and one bad count must not
+ * decide the rate. As with purchases, nothing is flagged without enough
+ * intervals to judge by, or when flagging would leave nothing.
+ */
+function flagUnlikelyCounts(intervals: IntervalObservation[], config: ConsumptionRateConfig): void {
+  const candidates = intervals.filter((i) => i.excluded === null);
+  if (candidates.length < config.minIntervalsForOutlierCheck) return;
+
+  const typical = median(candidates.map((i) => i.ratePerDay));
+  const flagged = candidates.filter(
+    (i) =>
+      i.kind === "correction" &&
+      (i.ratePerDay > typical * config.unlikelyCountRatio || i.ratePerDay < typical / config.unlikelyCountRatio),
+  );
+  if (flagged.length === candidates.length) return;
+  for (const interval of flagged) interval.excluded = "unlikely-count";
+}
+
+/**
+ * Flags purchase intervals far from the median rate. Correction stretches
+ * have their own, wider check (flagUnlikelyCounts), so they are not flagged here. If that would leave nothing, the flags
  * are cleared: when everything disagrees there is no "typical" to judge by.
  */
 function flagOutliers(intervals: IntervalObservation[], config: ConsumptionRateConfig): void {

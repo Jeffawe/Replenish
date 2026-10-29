@@ -31,6 +31,12 @@ export interface InventoryEstimate {
   isLow: boolean;
   lowStockThresholdDays: number;
   /** The known stock level the estimate is projected from. */
-  anchor: { kind: "purchase" | "correction"; at: Date; quantity: number } | null;
+  anchor: {
+    kind: "purchase" | "correction";
+    at: Date;
+    quantity: number;
+    /** A stock count far from what we expected, so possibly a mistake; the questions ask about it again. */
+    disputed: boolean;
+  } | null;
   purchaseCount: number;
 }
