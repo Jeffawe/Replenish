@@ -1,4 +1,5 @@
 import {
+  boolean,
   doublePrecision,
   index,
   integer,
@@ -8,6 +9,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // Single hard-coded demo user for now; every table still carries user_id so
 // real auth can replace it without a schema change.
@@ -48,6 +50,10 @@ export const products = pgTable(
     // When the user said not to track it. Hidden from the dashboard and from
     // matching, never deleted; buying it again brings it back.
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    // Whether receipts are matched to this product by its name. The user can
+    // rename a product to something only they use ("Mom's coffee") and turn
+    // this off; wordings it was matched by before still count (product_aliases).
+    matchByName: boolean("match_by_name").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("products_user_name_idx").on(t.userId, t.normalizedName)],
@@ -166,6 +172,106 @@ export const questionSnoozes = pgTable(
     until: timestamp("until", { withTimezone: true }).notNull(),
   },
   (t) => [uniqueIndex("question_snoozes_user_product_kind_idx").on(t.userId, t.productId, t.kind)],
+);
+
+// The shared dictionary: what receipt wordings mean, for everyone. Read by
+// receipt matching; grows from what users confirm and from edits by hand or by
+// an agent (see src/modules/dictionary and docs/dictionary.md). `source` is
+// "seed" (the starter list), "learned", "manual" or "lookup"; `status` is
+// "active" (used), "pending" (waiting for approval or more confirmations) or
+// "off" (switched off, never used or re-learned).
+export const dictionaryItems = pgTable(
+  "dictionary_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    // Lowercased/trimmed, like products.normalizedName.
+    normalizedName: text("normalized_name").notNull(),
+    category: text("category").notNull(),
+    unit: text("unit"),
+    // False for things that don't get used up; their name is their category.
+    consumable: boolean("consumable").notNull().default(true),
+    source: text("source").notNull().default("manual"),
+    status: text("status").notNull().default("active"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("dictionary_items_name_idx").on(t.normalizedName)],
+);
+
+export const dictionaryTerms = pgTable(
+  "dictionary_terms",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Lowercased wording, matched as whole words (see engine.ts).
+    text: text("text").notNull(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => dictionaryItems.id, { onDelete: "cascade" }),
+    source: text("source").notNull().default("manual"),
+    status: text("status").notNull().default("active"),
+    // The receipts (idempotency keys) whose saves confirmed it, capped; its length is the confirmations.
+    evidence: text("evidence").array().notNull().default(sql`'{}'::text[]`),
+    // The same wording was confirmed for a different item too, so it needs a person's decision.
+    conflict: boolean("conflict").notNull().default(false),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("dictionary_terms_text_item_idx").on(t.text, t.itemId)],
+);
+
+export const dictionaryBrands = pgTable(
+  "dictionary_brands",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    normalizedName: text("normalized_name").notNull(),
+    terms: text("terms").array().notNull().default(sql`'{}'::text[]`),
+    // The item a brand on its own means, when it only makes one thing.
+    impliesItemId: uuid("implies_item_id").references(() => dictionaryItems.id, { onDelete: "set null" }),
+    source: text("source").notNull().default("manual"),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("dictionary_brands_name_idx").on(t.normalizedName)],
+);
+
+// A store's own code for an item (a UPC, a Costco number).
+export const dictionaryCodes = pgTable(
+  "dictionary_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Normalized store name (letters and digits only).
+    store: text("store").notNull(),
+    code: text("code").notNull(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => dictionaryItems.id, { onDelete: "cascade" }),
+    source: text("source").notNull().default("manual"),
+    status: text("status").notNull().default("active"),
+    evidence: text("evidence").array().notNull().default(sql`'{}'::text[]`),
+    conflict: boolean("conflict").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("dictionary_codes_store_code_item_idx").on(t.store, t.code, t.itemId)],
+);
+
+// What the Open Food Facts lookup said about a product code, kept so a code is
+// looked up once, ever (a code it didn't know is looked up again after a while).
+export const codeLookups = pgTable(
+  "code_lookups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: text("code").notNull(),
+    found: boolean("found").notNull(),
+    name: text("name"),
+    brand: text("brand"),
+    // The database's category tags, joined with commas, most specific last.
+    categories: text("categories"),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("code_lookups_code_idx").on(t.code)],
 );
 
 export type User = typeof users.$inferSelect;

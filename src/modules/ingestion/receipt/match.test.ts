@@ -76,3 +76,65 @@ describe("createMatcher", () => {
     expect(createMatcher([], [])("MILK")).toBeNull();
   });
 });
+
+describe("createMatcher: item codes", () => {
+  const aliases = [
+    { alias: "#walmart#007874235186", productId: "p-almond" },
+    { alias: "gv whl mlk gl", productId: "p-milk" },
+  ];
+
+  it("goes by a confirmed item code at that store, whatever the wording says", () => {
+    const match = createMatcher(products, aliases, "Walmart");
+    expect(match("GV WHL MLK GL", undefined, "007874235186")).toEqual({ product: almond, by: "code" });
+    expect(match("XQZ BLRRY", undefined, "007874235186")).toEqual({ product: almond, by: "code" });
+  });
+
+  it("ignores a code from another store, and an unknown code", () => {
+    expect(createMatcher(products, aliases, "Target")("GV WHL MLK GL", undefined, "007874235186")).toEqual({ product: milk, by: "alias" });
+    expect(createMatcher(products, aliases, "Walmart")("GV WHL MLK GL", undefined, "000000000001")).toEqual({ product: milk, by: "alias" });
+    expect(createMatcher(products, aliases)("GV WHL MLK GL", undefined, "007874235186")).toEqual({ product: milk, by: "alias" });
+  });
+});
+
+describe("createMatcher: wordings close to ones the user confirmed", () => {
+  it("matches an OCR slip of a confirmed wording, for checking", () => {
+    const match = createMatcher(products, [{ alias: "gv whl mlk gl", productId: "p-milk" }]);
+    expect(match("GV WHL MLK GI")).toEqual({ product: milk, by: "similar" });
+    expect(match("GV WHI MLK GL")).toEqual({ product: milk, by: "similar" });
+  });
+
+  it("doesn't guess between two products' wordings that are both close", () => {
+    const match = createMatcher(products, [
+      { alias: "kirkland milk 1", productId: "p-milk" },
+      { alias: "kirkland milk 2", productId: "p-almond" },
+    ]);
+    expect(match("KIRKLAND MILK 3")).toBeNull();
+  });
+
+  it("leaves short wordings alone, where one letter is a different item", () => {
+    const match = createMatcher(products, [{ alias: "eggs", productId: "p-eggs" }]);
+    expect(match("EGGO")).toBeNull();
+  });
+
+  it("never treats an item code as a wording", () => {
+    const match = createMatcher(products, [{ alias: "#walmart#007874235186", productId: "p-almond" }]);
+    expect(match("#walmart#007874235187")).toBeNull();
+  });
+});
+
+describe("createMatcher: a product not matched by its name", () => {
+  const mine = { ...product("p-coffee", "Mom's coffee", "bag"), matchByName: false };
+
+  it("isn't found by its name, or by words like it", () => {
+    const match = createMatcher([mine], []);
+    expect(match("MOMS COFFEE")).toBeNull();
+    expect(match("Mom's coffee")).toBeNull();
+  });
+
+  it("is still found by the wordings it was matched by before", () => {
+    expect(createMatcher([mine], [{ alias: "starbucks pike pl", productId: "p-coffee" }])("STARBUCKS PIKE PL")).toEqual({
+      product: mine,
+      by: "alias",
+    });
+  });
+});

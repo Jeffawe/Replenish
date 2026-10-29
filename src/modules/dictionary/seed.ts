@@ -1,29 +1,14 @@
+import type { DictionaryData } from "./types";
+
 /**
- * A starter dictionary of what US receipts sell, used to turn a receipt's
- * wording ("GV WHL MLK GL") into the item the user tracks ("Milk") and its
- * brand ("Great Value"), and to spot things that never need restocking.
+ * The starter dictionary: what US receipts sell. It is only the starting
+ * point. The live dictionary is the database (see index.ts and
+ * docs/dictionary.md); this file initialises an empty one (`npm run
+ * dictionary -- seed`) and is what tests and a database with nothing in it use.
  *
- * Plain tables, so adding an item or an abbreviation is one line. Terms are
- * matched as whole words, singular or plural ("egg" matches "EGGS"); a longer
- * term beats a shorter one ("paper towels" beats "towel").
+ * Plain tables, so adding a line is easy. Terms are matched as whole words,
+ * singular or plural ("egg" matches "EGGS"); a longer term beats a shorter one.
  */
-
-export interface CatalogItem {
-  name: string;
-  category: string;
-  /** The unit a new product of this kind is counted in, when it isn't just "each". */
-  unit: string | null;
-  /** False for things that don't get used up (furniture, electronics...). */
-  consumable: boolean;
-}
-
-export interface Identified {
-  item: CatalogItem | null;
-  /** Display name, like "Great Value". */
-  brand: string | null;
-  /** The receipt's words without the brand's, for naming an item the dictionary doesn't know. */
-  withoutBrand: string;
-}
 
 // Name | Category | unit ("-" for each) | terms: what receipts call it, abbreviations included.
 const CONSUMABLES = `
@@ -190,7 +175,7 @@ Cold Medicine | Health | box | cold and flu, dayquil, nyquil, cough syrup, mucin
 Bandages | Health | box | bandage, bandages, band aid, bandaids
 `;
 
-// Category: terms. Shown in the list but unticked by default.
+// Category: terms, for things that never get used up (so they start unticked).
 const DURABLES = `
 furniture: chair, table, desk, sofa, couch, bed frame, dresser, bookcase, bookshelf, shelf, cabinet, stool, ottoman, nightstand, futon, recliner, bench, mattress
 home decor: lamp, rug, curtain, curtains, mirror, picture frame, frame, vase, clock, pillow, throw, blanket, comforter, duvet, sheet set, quilt, artificial plant, wall art
@@ -319,103 +304,32 @@ Tylenol | tylenol | Pain Reliever
 Band-Aid | band aid | Bandages
 `;
 
-const STEMS: [RegExp, string][] = [
-  [/ies$/, "y"],
-  [/oes$/, "o"],
-  [/([^s])s$/, "$1"],
-];
-/** "berries" -> "berry", "tomatoes" -> "tomato", "eggs" -> "egg". Short words are left alone. */
-const stem = (word: string) => {
-  if (word.length <= 3) return word;
-  for (const [pattern, replacement] of STEMS) if (pattern.test(word)) return word.replace(pattern, replacement);
-  return word;
-};
-
-/** Words, as written, and their matching keys. Apostrophes join a word ("member's" -> "members"). */
-function words(text: string): { text: string; key: string }[] {
-  return text
-    .replace(/['’]/g, "")
-    .split(/[^\p{L}\p{N}%]+/u)
-    .filter((word) => word && word.toLowerCase() !== "and")
-    .map((word) => ({ text: word, key: stem(word.toLowerCase()) }));
-}
-
-interface Entry<T> {
-  keys: string[];
-  value: T;
-}
-
-function entries<T>(terms: string, value: T): Entry<T>[] {
-  return terms
+const split = (terms: string) =>
+  terms
     .split(",")
-    .map((term) => words(term.trim()).map((word) => word.key))
-    .filter((keys) => keys.length > 0)
-    .map((keys) => ({ keys, value }));
-}
+    .map((term) => term.trim().toLowerCase())
+    .filter(Boolean);
 
-const ITEMS: Entry<CatalogItem>[] = [
-  ...CONSUMABLES.trim()
-    .split("\n")
-    .flatMap((line) => {
-      const [name, category, unit, terms] = line.split("|").map((part) => part.trim());
-      return entries(terms, { name, category, unit: unit === "-" ? null : unit, consumable: true });
-    }),
-  ...DURABLES.trim()
-    .split("\n")
-    .flatMap((line) => {
-      const [category, terms] = line.split(":").map((part) => part.trim());
-      return entries(terms, { name: "", category, unit: null, consumable: false });
-    }),
-];
-
-const ITEMS_BY_NAME = new Map(ITEMS.filter((e) => e.value.consumable).map((e) => [e.value.name, e.value]));
-
-const BRAND_ENTRIES: Entry<{ name: string; implies: CatalogItem | null }>[] = BRANDS.trim()
-  .split("\n")
-  .flatMap((line) => {
-    const [name, terms, implies] = line.split("|").map((part) => part.trim());
-    return entries(terms, { name, implies: implies ? (ITEMS_BY_NAME.get(implies) ?? null) : null });
-  });
-
-/** Where `keys` appears as a run in `within`, or -1. */
-function findRun(within: string[], keys: string[]): number {
-  for (let start = 0; start + keys.length <= within.length; start++) {
-    if (keys.every((key, i) => within[start + i] === key)) return start;
+/** The starter dictionary as data. */
+export function seedData(): DictionaryData {
+  const items: DictionaryData["items"] = [];
+  const terms: DictionaryData["terms"] = [];
+  for (const line of CONSUMABLES.trim().split("\n")) {
+    const [name, category, unit, list] = line.split("|").map((part) => part.trim());
+    items.push({ name: name!, category: category!, unit: unit === "-" ? null : unit!, consumable: true });
+    for (const text of split(list!)) terms.push({ text, item: name! });
   }
-  return -1;
-}
-
-/** The entry with the longest term found in the words. On a tie the earlier entry wins (consumables come first). */
-function longestMatch<T>(keys: string[], list: Entry<T>[]) {
-  let best: { entry: Entry<T>; at: number } | null = null;
-  for (const entry of list) {
-    if (best && entry.keys.length <= best.entry.keys.length) continue;
-    const at = findRun(keys, entry.keys);
-    if (at !== -1) best = { entry, at };
+  for (const line of DURABLES.trim().split("\n")) {
+    const [category, list] = line.split(":").map((part) => part.trim());
+    // A durable "item" is its category: all the dictionary says about it is that it isn't used up.
+    items.push({ name: category!, category: category!, unit: null, consumable: false });
+    for (const text of split(list!)) terms.push({ text, item: category! });
   }
-  return best;
+  const brands = BRANDS.trim()
+    .split("\n")
+    .map((line) => {
+      const [name, list, implies] = line.split("|").map((part) => part.trim());
+      return { name: name!, terms: split(list!), implies: implies || null };
+    });
+  return { items, terms, brands, codes: [] };
 }
-
-/** What the dictionary can tell about one receipt line. */
-export function identify(receiptName: string): Identified {
-  const all = words(receiptName);
-  const keys = all.map((word) => word.key);
-
-  const brand = longestMatch(keys, BRAND_ENTRIES);
-  const brandWords = brand ? new Set(brand.entry.keys.map((_, i) => brand.at + i)) : new Set<number>();
-  // Look for the item outside the brand's words, so "Bounty" doesn't also count as a word of the item.
-  const rest = all.filter((_, i) => !brandWords.has(i));
-  const item = longestMatch(
-    rest.map((word) => word.key),
-    ITEMS,
-  );
-
-  return {
-    item: item?.entry.value ?? brand?.entry.value.implies ?? null,
-    brand: brand?.entry.value.name ?? null,
-    withoutBrand: rest.map((word) => word.text).join(" "),
-  };
-}
-
-/** How many consumable items the dictionary knows, for tests and curiosity. */
-export const CATALOG_SIZE = ITEMS_BY_NAME.size;

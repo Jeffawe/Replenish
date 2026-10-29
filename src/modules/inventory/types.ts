@@ -42,6 +42,9 @@ const optionalNumber = (message: string) =>
  */
 export const ProductEditSchema = z.object({
   productId: z.uuid(),
+  name: z.string().trim().min(1, "Give it a name").max(200, "That is too long"),
+  /** Sent as "true"/"false" by a hidden field, so a form without the switch on show keeps the setting. */
+  matchByName: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
   unit: z.string().trim().min(1, "Enter a unit, like rolls or bottles").max(40),
   category: z.preprocess(blankToNull, z.string().trim().max(60).nullable()),
   brand: z

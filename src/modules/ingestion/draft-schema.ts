@@ -16,7 +16,8 @@ export const DraftSchema: z.ZodType<Draft> = z.object({
     .array(
       z.object({
         sourceText: z.string().max(300),
-        matchedBy: z.enum(["name", "alias", "similar"]).nullable(),
+        matchedBy: z.enum(["code", "name", "alias", "similar"]).nullable(),
+        code: z.string().regex(/^\d{3,14}$/).optional(),
         excludeReason: z.string().max(300).optional(),
       }),
     )

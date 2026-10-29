@@ -13,7 +13,14 @@ export interface ConfidenceFactor {
 export interface InventoryEstimate {
   productId: string;
   unit: string;
+  /** The usual purchase: the median of recent purchases (the product's stored value until there are any). */
   normalPurchaseQty: number;
+  /**
+   * How much is usually still at home when the user buys more, and where that
+   * comes from: measured from stock counts given just before buying, the user's
+   * answer, or nothing known (counted as 0).
+   */
+  typicalLeftover: { quantity: number | null; source: "learned" | "answer" | "none" };
   /** Null when there is no starting point or no usage rate to project from. */
   estimatedRemaining: number | null;
   consumptionPerDay: number | null;

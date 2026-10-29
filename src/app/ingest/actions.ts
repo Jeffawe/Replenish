@@ -61,6 +61,8 @@ export async function mergePhotoAction(previous: unknown, photoDraft: unknown): 
 const ReviewSchema = z.object({
   sources: z.array(z.string().max(200).nullable()).max(200),
   skipped: z.array(z.string().max(200)).max(200),
+  codes: z.array(z.string().regex(/^\d{3,14}$/).nullable()).max(200).optional(),
+  store: z.string().max(120).nullable().optional(),
 });
 
 /**
@@ -68,7 +70,10 @@ const ReviewSchema = z.object({
  * each submitted line (parallel to the batch's items) and which lines the user
  * left out, so both can be remembered for next time.
  */
-export async function submitAction(batch: unknown, review?: { sources: (string | null)[]; skipped: string[] }) {
+export async function submitAction(
+  batch: unknown,
+  review?: { sources: (string | null)[]; skipped: string[]; codes?: (string | null)[]; store?: string | null },
+) {
   const user = await getDemoUser();
   const outcome = await submitBatch(user.id, batch);
   if (!outcome.ok) return outcome;
@@ -76,7 +81,8 @@ export async function submitAction(batch: unknown, review?: { sources: (string |
   const lessons = ReviewSchema.safeParse(review);
   if (lessons.success) {
     try {
-      await learnFromReview(user.id, lessons.data, outcome.result);
+      const receiptKey = z.object({ idempotencyKey: z.string() }).safeParse(batch);
+      await learnFromReview(user.id, lessons.data, outcome.result, receiptKey.success ? receiptKey.data.idempotencyKey : undefined);
     } catch (error) {
       // The purchases are stored; failing to remember the lessons must not look like a failed save.
       console.error("Couldn't save what the review taught us", error);

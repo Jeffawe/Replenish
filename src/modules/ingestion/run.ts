@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ProductSummary, PurchaseSummary } from "@/core/purchase-batch";
-import { detectPossibleDuplicates } from "./duplicates";
+import { detectAlreadySaved, detectPossibleDuplicates } from "./duplicates";
 import { toIssues, type Draft, type ExtractResult, type Extractor, type Issue } from "./types";
 
 /** Everything the runner needs from outside, so it can be tested without a database. */
@@ -26,15 +26,12 @@ export function createDuplicateChecker(deps: Pick<RunDeps, "loadProducts" | "loa
   return async function withDuplicateWarnings(draft: Draft, userId: string): Promise<Draft> {
     const { batch } = draft;
     const purchasedAt = z.coerce.date().safeParse(batch.purchasedAt);
-    const kept = draft.warnings.filter((warning) => warning.code !== "possible-duplicate");
+    const kept = draft.warnings.filter((warning) => warning.code !== "possible-duplicate" && warning.code !== "already-saved");
     if (!purchasedAt.success) return { ...draft, warnings: kept };
 
     const [products, nearby] = await Promise.all([deps.loadProducts(userId), deps.loadNearby(userId, purchasedAt.data)]);
-    const warnings = detectPossibleDuplicates(
-      { purchasedAt: purchasedAt.data, store: batch.store, idempotencyKey: batch.idempotencyKey, items: batch.items },
-      products,
-      nearby,
-    );
+    const check = { purchasedAt: purchasedAt.data, store: batch.store, idempotencyKey: batch.idempotencyKey, items: batch.items };
+    const warnings = [...detectAlreadySaved(check, nearby), ...detectPossibleDuplicates(check, products, nearby)];
     return { ...draft, warnings: [...kept, ...warnings] };
   };
 }

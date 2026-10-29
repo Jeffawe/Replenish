@@ -242,6 +242,7 @@ describe("listProductSummaries", () => {
       category: "Household",
       unit: "rolls",
       normalPurchaseQty: 12,
+      matchByName: true,
     });
   });
 
@@ -295,5 +296,29 @@ describe("ingestPurchaseBatch: brands", () => {
     const [product] = await productsOf(userId);
     expect(product.brand).toBe("Great Value");
     expect((await eventsOf(userId)).some((e) => e.brand === null)).toBe(true);
+  });
+});
+
+describe("ingestPurchaseBatch: saving the same receipt again", () => {
+  const eggs = { productName: "Eggs", quantity: 12, unit: "each" };
+
+  it("stores only a line left out the first time, going by the receipt's own line numbers", async () => {
+    const userId = await newUser();
+    const key = randomUUID();
+    // First time: lines 0 (toilet paper) and 2 (milk) of the receipt were ticked; eggs (line 1) was left out.
+    await ingestPurchaseBatch(userId, batch({ idempotencyKey: key, items: [{ ...toilet, line: 0 }, { ...milk, line: 2 }] }));
+    // Second time the user ticks the eggs too.
+    const again = await ingestPurchaseBatch(
+      userId,
+      batch({ idempotencyKey: key, items: [{ ...toilet, line: 0 }, { ...eggs, line: 1 }, { ...milk, line: 2 }] }),
+    );
+
+    expect(again.items.map((item) => item.result)).toEqual(["duplicate", "created", "duplicate"]);
+    const lines = (await eventsOf(userId)).map((e) => e.lineIndex).sort();
+    expect(lines).toEqual([0, 1, 2]);
+  });
+
+  it("rejects a batch that gives two lines the same number", () => {
+    expect(() => batch({ items: [{ ...toilet, line: 3 }, { ...milk, line: 3 }] })).toThrow();
   });
 });

@@ -30,7 +30,7 @@ const eslintConfig = defineConfig([
   // Modules keep their insides to themselves: from outside a module, import only its
   // server door ("@/modules/<name>") or its browser door ("@/modules/<name>/client").
   // One rule per file, because a later "no-restricted-imports" replaces an earlier one.
-  ...boundaries(["ingestion", "questions"]),
+  ...boundaries(["ingestion", "questions", "dictionary"]),
 ]);
 
 export default eslintConfig;

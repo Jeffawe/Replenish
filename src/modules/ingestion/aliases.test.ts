@@ -56,3 +56,18 @@ describe("lessonsFromReview", () => {
     expect(lessonsFromReview({ sources: ["MILK"], skipped: ["milk"] }, result).ignore).toEqual([]);
   });
 });
+
+describe("lessonsFromReview: item codes", () => {
+  const result: IngestResult = { status: "processed", items: [created(0, "p-milk"), created(1, "p-eggs")] };
+
+  it("ties each line's item code at that store to the product it landed on", () => {
+    const lessons = lessonsFromReview({ sources: ["GV WHL MLK", "EGGS"], skipped: [], codes: ["007874235186", null], store: "Wal-Mart" }, result);
+    expect(lessons.aliases).toContainEqual({ alias: "#walmart#007874235186", productId: "p-milk" });
+    expect(lessons.aliases.filter((a) => a.alias.startsWith("#"))).toHaveLength(1);
+  });
+
+  it("can't learn a code without knowing the store", () => {
+    const lessons = lessonsFromReview({ sources: ["GV WHL MLK", "EGGS"], skipped: [], codes: ["007874235186", null] }, result);
+    expect(lessons.aliases.some((a) => a.alias.startsWith("#"))).toBe(false);
+  });
+});

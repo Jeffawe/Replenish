@@ -15,6 +15,7 @@ ESLint fails the build if code outside this folder imports anything deeper (dev 
 
 - `src/core/purchase-batch.ts` and `src/core/product-name.ts`: the shared batch format and one string helper;
 - `src/lib/format.ts`: price formatting;
+- the dictionary (`@/modules/dictionary`, and its pure `/client` door): what wordings mean. `index.ts` loads it and teaches it from saves;
 - inventory's database functions, **only in `index.ts`** (the one place that wires this folder to the real database).
 
 Inventory never imports this folder.
@@ -35,7 +36,7 @@ Inventory never imports this folder.
 | [`receipt/`](receipt/) | The receipt producer: OCR, rows, parse, dictionary, matching, draft, test samples |
 | [`email/`](email/) | The email producer and inbox sync (designed, simulated inbox only) |
 
-Inside `receipt/`, in the order a photo goes through them: `ocr/` (Google Vision), `layout.ts`, `parse.ts`, `catalog.ts`, `match.ts`, `extractor.ts`. `merge.ts` adds a second photo's draft to the first, and `totals.ts` holds the receipt key and the adding-up check they share. `samples.ts` and `sample-review.ts` are the local test-sample store and its comparison.
+Inside `receipt/`, in the order a photo goes through them: `ocr/` (Google Vision), `layout.ts`, `parse.ts`, the dictionary (a separate module), `match.ts`, `extractor.ts`. `merge.ts` adds a second photo's draft to the first, and `totals.ts` holds the receipt key and the adding-up check they share. `samples.ts` and `sample-review.ts` are the local test-sample store and its comparison.
 
 ## Adding a way of ingesting
 

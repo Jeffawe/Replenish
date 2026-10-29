@@ -1,0 +1,1 @@
+ALTER TABLE "products" ADD COLUMN "match_by_name" boolean DEFAULT true NOT NULL;

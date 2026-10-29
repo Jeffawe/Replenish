@@ -20,6 +20,9 @@ export async function InventoryList() {
     );
   }
 
+  // Every product, so a duplicate can be merged into the right one.
+  const others = items.map(({ product }) => ({ id: product.id, name: product.name, unit: product.unit }));
+
   const categories = [
     ...new Set(items.map((i) => i.product.category).filter((c): c is string => !!c)),
   ].sort();
@@ -41,7 +44,7 @@ export async function InventoryList() {
       </dl>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((item) => (
-          <InventoryCard key={item.product.id} item={item} now={now} categories={categories} />
+          <InventoryCard key={item.product.id} item={item} now={now} categories={categories} others={others} />
         ))}
       </div>
     </>

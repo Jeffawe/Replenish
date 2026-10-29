@@ -3,7 +3,7 @@ import { normalizeBrands, ProductEditSchema } from "./types";
 
 const productId = "0b0f3d9e-6d0e-4a37-9d0a-3f0f8f6f2a11";
 const parse = (fields: Record<string, string>) =>
-  ProductEditSchema.safeParse({ productId, unit: "rolls", ...fields });
+  ProductEditSchema.safeParse({ productId, name: "Toilet Paper", unit: "rolls", ...fields });
 
 describe("normalizeBrands", () => {
   it("trims, drops blanks and duplicates, and rejoins with commas", () => {
@@ -58,6 +58,16 @@ describe("ProductEditSchema", () => {
 
   it("normalizes the brand list", () => {
     expect(parse({ brand: "Charmin, Cottonelle,charmin" }).data?.brand).toBe("Charmin, Cottonelle");
+  });
+
+  it("needs a name", () => {
+    expect(parse({ name: "  " }).success).toBe(false);
+  });
+
+  it("matches by name unless told not to, so a form without the switch keeps the default", () => {
+    expect(parse({}).data?.matchByName).toBe(true);
+    expect(parse({ matchByName: "false" }).data?.matchByName).toBe(false);
+    expect(parse({ matchByName: "true" }).data?.matchByName).toBe(true);
   });
 
   it("rejects an empty unit", () => {

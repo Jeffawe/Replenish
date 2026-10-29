@@ -1,4 +1,4 @@
-import { identify } from "./catalog";
+import { starterIdentify, type Identifier } from "@/modules/dictionary/client";
 
 /**
  * Turns the rows of a receipt (see layout.ts) into a store, a date, a total
@@ -14,6 +14,12 @@ export interface ParsedLine {
   /** A unit the receipt stated, like "lb" for something weighed. Null for a plain count. */
   unit: string | null;
   priceCents: number | null;
+  /**
+   * The store's own number for the item (a UPC, or Costco's item number),
+   * when the receipt prints one. The most reliable thing on the line: it
+   * names the item exactly, however the words are abbreviated or misread.
+   */
+  code?: string;
 }
 
 export interface ParsedReceipt {
@@ -86,7 +92,7 @@ function lastAmount(row: string): number | null {
   return all ? toCents(all[all.length - 1]) : null;
 }
 
-export function parseReceipt(rows: string[], now: Date): ParsedReceipt {
+export function parseReceipt(rows: string[], now: Date, identify: Identifier = starterIdentify): ParsedReceipt {
   const tidy = rows.map((row) => row.replace(/\s+/g, " ").trim());
   const { subtotalCents, totalCents } = findTotals(tidy);
 
@@ -96,7 +102,7 @@ export function parseReceipt(rows: string[], now: Date): ParsedReceipt {
   const itemRows = end === -1 ? tidy : tidy.slice(0, end);
 
   const store = findStore(tidy);
-  const { lines, discountsCents } = findLines(itemRows, { itemNumbers: store === "Costco" });
+  const { lines, discountsCents } = findLines(itemRows, { itemNumbers: store === "Costco", identify });
 
   return {
     store,
@@ -110,7 +116,7 @@ export function parseReceipt(rows: string[], now: Date): ParsedReceipt {
   };
 }
 
-function findLines(rows: string[], options: { itemNumbers: boolean }) {
+function findLines(rows: string[], options: { itemNumbers: boolean; identify: Identifier }) {
   const lines: ParsedLine[] = [];
   let discountsCents = 0;
   const clean = (text: string) => cleanName(text, options.itemNumbers);
@@ -125,8 +131,8 @@ function findLines(rows: string[], options: { itemNumbers: boolean }) {
   // worth listing when it is clearly something the user restocks.
   const keepIfKnown = (text: string) => {
     const named = clean(text);
-    if (named && identify(named.name).item?.consumable) {
-      lines.push({ name: named.name, quantity: named.quantity, unit: null, priceCents: null });
+    if (named && options.identify(named.name).item?.consumable) {
+      lines.push({ name: named.name, code: named.code, quantity: named.quantity, unit: null, priceCents: null });
     }
   };
 
@@ -161,7 +167,7 @@ function findLines(rows: string[], options: { itemNumbers: boolean }) {
 
       const above = waiting ? clean(waiting) : null;
       if (above) {
-        lines.push({ name: above.name, quantity: quantity * above.quantity, unit, priceCents: price });
+        lines.push({ name: above.name, code: above.code, quantity: quantity * above.quantity, unit, priceCents: price });
       } else if (canAmendLast && lines.length > 0) {
         const last = lines[lines.length - 1];
         last.quantity *= quantity;
@@ -200,7 +206,7 @@ function findLines(rows: string[], options: { itemNumbers: boolean }) {
         continue;
       }
       if (named) {
-        lines.push({ name: named.name, quantity: named.quantity, unit: null, priceCents: cents });
+        lines.push({ name: named.name, code: named.code, quantity: named.quantity, unit: null, priceCents: cents });
         canAmendLast = true;
         leadingPrice = null;
       }
@@ -213,7 +219,7 @@ function findLines(rows: string[], options: { itemNumbers: boolean }) {
             leadingPrice = null;
             continue;
           }
-          lines.push({ name: above.name, quantity: above.quantity, unit: null, priceCents: cents });
+          lines.push({ name: above.name, code: above.code, quantity: above.quantity, unit: null, priceCents: cents });
           canAmendLast = true;
           leadingPrice = null;
         } else {
@@ -224,7 +230,7 @@ function findLines(rows: string[], options: { itemNumbers: boolean }) {
     } else if (lettersIn(row) >= 3) {
       const next = clean(row);
       if (leadingPrice !== null && next) {
-        lines.push({ name: next.name, quantity: next.quantity, unit: null, priceCents: leadingPrice });
+        lines.push({ name: next.name, code: next.code, quantity: next.quantity, unit: null, priceCents: leadingPrice });
         leadingPrice = null;
         canAmendLast = true;
       } else {
@@ -242,10 +248,16 @@ function findLines(rows: string[], options: { itemNumbers: boolean }) {
  * leading "2 x", and a pack size ("12CT", which multiplies the quantity).
  * Null when nothing name-like is left.
  */
-function cleanName(text: string, itemNumbers = false): { name: string; quantity: number } | null {
+function cleanName(text: string, itemNumbers = false): { name: string; quantity: number; code?: string } | null {
   let rest = text.replace(/[$@*#|_=]+/g, " ");
+  let code: string | undefined;
   // Costco prints its item number first ("E 9462 ORANGES", "6884 AMORE TOV"). Other shops can lead with a brand ("365 OG ..."), so only there.
-  if (itemNumbers) rest = rest.replace(/^\s*(?:[A-Za-z]\s+)?\d{3,7}\s+(?=\S)/, "");
+  if (itemNumbers) {
+    rest = rest.replace(/^\s*(?:[A-Za-z]\s+)?(\d{3,7})\s+(?=\S)/, (_, number: string) => {
+      code = number;
+      return "";
+    });
+  }
 
   let count = 1;
   let orderCount = false;
@@ -272,12 +284,14 @@ function cleanName(text: string, itemNumbers = false): { name: string; quantity:
   const tokens = rest.split(/\s+/).filter(Boolean);
   // Some stores print a one-letter flag before the item code ("E 1234567 KS TP").
   if (tokens.length > 2 && /^[A-Z]$/.test(tokens[0]) && /^\d{5,}$/.test(tokens[1])) tokens.shift();
+  // A long run of digits is an item code (a UPC is 12), not part of the name.
+  code ??= tokens.find((word) => /^\d{5,14}$/.test(word));
   const words = tokens.filter((word) => !/^\d{5,}$/.test(word) && !/^[\p{P}\p{S}]+$/u.test(word));
   if (words.length > 1 && /^[A-Z]$/.test(words[words.length - 1])) words.pop();
 
   const name = words.join(" ").replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}.%)]+$/gu, "");
   if (lettersIn(name) < 2) return null;
-  return { name, quantity: count * pack };
+  return { name, quantity: count * pack, code };
 }
 
 /** "GV WHL MLK GL" -> "Gv Whl Mlk Gl". Left alone when it already has lowercase. */

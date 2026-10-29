@@ -14,9 +14,12 @@
     "db:seed": "tsx --env-file=.env.local scripts/seed.ts",
     "receipt": "tsx --env-file=.env.local scripts/try-receipt.ts",
     "samples": "tsx --env-file=.env.local scripts/review-samples.ts",
+    "dictionary": "tsx --env-file=.env.local scripts/dictionary.ts",
+    "encoder": "tsx --env-file=.env.local scripts/encoder.ts",
     "test:db": "DB_TESTS=1 vitest run"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.2",
     "@neondatabase/serverless": "^1.2.0",
     "drizzle-orm": "^0.45.4",
     "next": "16.4.2",

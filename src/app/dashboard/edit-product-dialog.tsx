@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
+import { normalizeProductName } from "@/core/product-name";
 import { formatQuantity } from "@/lib/format";
-import { editProductAction, type EditProductState } from "./actions";
+import { editProductAction, mergeProductsAction, type EditProductState } from "./actions";
 
 export interface EditableProduct {
   id: string;
@@ -14,6 +15,7 @@ export interface EditableProduct {
   fallbackDaysPerPurchase: number | null;
   typicalLeftoverAtPurchase: number | null;
   lowStockThresholdDays: number | null;
+  matchByName: boolean;
 }
 
 interface Props {
@@ -23,6 +25,8 @@ interface Props {
   defaultThresholdDays: number;
   /** Existing categories, offered as suggestions. */
   categories: string[];
+  /** The user's other products, to merge this one into. */
+  others: { id: string; name: string; unit: string }[];
 }
 
 const INPUT =
@@ -35,10 +39,14 @@ export function EditProductDialog({
   estimatedRemaining,
   defaultThresholdDays,
   categories,
+  others,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const countRef = useRef<HTMLInputElement>(null);
   const [state, formAction, pending] = useActionState(editProductAction, IDLE);
+  const [name, setName] = useState(product.name);
+  const [matchByName, setMatchByName] = useState(product.matchByName);
+  const renamed = normalizeProductName(name) !== normalizeProductName(product.name);
 
   useEffect(() => {
     if (state.status === "saved") dialogRef.current?.close();
@@ -73,6 +81,11 @@ export function EditProductDialog({
       <dialog
         ref={dialogRef}
         aria-labelledby={titleId}
+        // Closing without saving drops an unsaved rename.
+        onClose={() => {
+          setName(product.name);
+          setMatchByName(product.matchByName);
+        }}
         // A click on the backdrop lands on the dialog element itself.
         onClick={(event) => {
           if (event.target === event.currentTarget) event.currentTarget.close();
@@ -100,6 +113,44 @@ export function EditProductDialog({
           </div>
 
           <div className="flex flex-col gap-5 overflow-y-auto px-5 py-4">
+            <Field label="Name" id={fid("name")} error={errors.name?.[0]}>
+              <input
+                {...fieldProps("name")}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                required
+                maxLength={200}
+                className={INPUT}
+              />
+              <input type="hidden" name="matchByName" value={String(matchByName)} />
+              {(renamed || !matchByName) && (
+                <div className="mt-1 flex flex-col gap-2 rounded-lg bg-zinc-50 px-3 py-2.5 text-sm dark:bg-zinc-800/60">
+                  {renamed && (
+                    <p className="text-zinc-600 dark:text-zinc-300">
+                      Receipts are matched to your products by name. We&rsquo;ll keep matching{" "}
+                      <span className="font-medium text-foreground">&ldquo;{product.name}&rdquo;</span> to this product, so
+                      nothing you&rsquo;ve already set up stops working.
+                    </p>
+                  )}
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={matchByName}
+                      onChange={(event) => setMatchByName(event.target.checked)}
+                      className="mt-0.5 size-4 shrink-0"
+                    />
+                    <span>
+                      <span className="font-medium">Match receipts by {renamed ? "the new name" : "this name"} too</span>
+                      <span className="block text-zinc-500 dark:text-zinc-400">
+                        Turn off if the name is just for you (like &ldquo;Mom&rsquo;s coffee&rdquo;) and shouldn&rsquo;t catch
+                        other receipt lines.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
+            </Field>
+
             <Field
               label="Unit"
               id={fid("unit")}
@@ -257,6 +308,8 @@ export function EditProductDialog({
                 </Field>
               </div>
             </details>
+
+            {others.length > 0 && <MergeInto product={product} others={others} />}
           </div>
 
           <div className="flex items-center justify-between gap-3 border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
@@ -322,5 +375,109 @@ function Field({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * "This is the same as another product": merges this one into the one chosen.
+ * Its purchases and stock counts move over and receipts that matched it match
+ * the other from then on. Only products counted in the same unit qualify.
+ */
+function MergeInto({ product, others }: { product: EditableProduct; others: { id: string; name: string; unit: string }[] }) {
+  const uid = useId();
+  const [intoId, setIntoId] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const unitKey = (unit: string) => unit.trim().toLowerCase().replace(/s$/, "");
+  const sorted = [...others].sort((a, b) => a.name.localeCompare(b.name));
+  const into = others.find((other) => other.id === intoId);
+
+  async function merge() {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const result = await mergeProductsAction(product.id, intoId);
+      if (result.status === "error") setProblem(result.message ?? "That didn't work. Please try again.");
+      // On success this product is gone and the dashboard redraws without it.
+    } catch {
+      setProblem("That didn't work. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <details className="rounded-xl border border-zinc-200 dark:border-zinc-800">
+      <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Same as another product?</summary>
+      <div className="flex flex-col gap-3 border-t border-zinc-200 px-4 py-4 dark:border-zinc-800">
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          If a receipt made a new product for something you already track, merge it in. Its purchases and stock counts
+          move over, and receipts that matched {product.name} will match the other product from now on.
+        </p>
+        <label htmlFor={`${uid}-into`} className="text-sm font-medium">
+          Merge {product.name} into
+        </label>
+        <select
+          id={`${uid}-into`}
+          value={intoId}
+          onChange={(event) => {
+            setIntoId(event.target.value);
+            setConfirming(false);
+            setProblem(null);
+          }}
+          className={INPUT}
+        >
+          <option value="">Choose a product…</option>
+          {sorted.map((other) => (
+            <option key={other.id} value={other.id} disabled={unitKey(other.unit) !== unitKey(product.unit)}>
+              {other.name}
+              {unitKey(other.unit) !== unitKey(product.unit) ? ` (counted in ${other.unit})` : ""}
+            </option>
+          ))}
+        </select>
+
+        {into && !confirming && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="rounded-lg border border-zinc-300 px-4 py-2 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              Merge…
+            </button>
+          </div>
+        )}
+
+        {into && confirming && (
+          <div role="alert" className="flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm dark:border-amber-900 dark:bg-amber-950">
+            <p>
+              Merge <span className="font-medium">{product.name}</span> into{" "}
+              <span className="font-medium">{into.name}</span>? {product.name} goes away and this can&rsquo;t be undone.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void merge()}
+                className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background disabled:opacity-60"
+              >
+                {busy ? "Merging…" : `Merge into ${into.name}`}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirming(false)}
+                className="rounded-lg px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {problem && <p className="text-sm text-rose-700 dark:text-rose-300">{problem}</p>}
+      </div>
+    </details>
   );
 }

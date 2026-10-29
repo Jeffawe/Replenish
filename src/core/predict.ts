@@ -26,6 +26,14 @@ export interface PredictConfig {
    * the leftover stock at that purchase, in place of the typical leftover.
    */
   correctionFreshDays: number;
+  /** The usual purchase is the median of this many recent purchases (one odd purchase or misread can't move it). */
+  usualPurchaseWindow: number;
+  /**
+   * Leftover-at-purchase measured from stock counts given just before buying
+   * replaces the user's answer once there are this many measurements; with
+   * fewer, the answer (if any) wins. Either could be wrong; more measurements win.
+   */
+  leftoverMeasurementsToTrust: number;
 
   /** Confidence by number of intervals used (index 0 = one interval, last = that many or more). */
   confidenceByIntervals: number[];
@@ -60,6 +68,8 @@ export const DEFAULT_PREDICT_CONFIG: PredictConfig = {
   defaultLowStockThresholdDays: 7,
   lowStockUsesEarliestEstimate: false,
   correctionFreshDays: 14,
+  usualPurchaseWindow: 6,
+  leftoverMeasurementsToTrust: 2,
 
   confidenceByIntervals: [0.5, 0.7, 0.85, 1],
   fallbackRateConfidence: 0.3,
@@ -130,21 +140,38 @@ export function predict(
   overrides: Partial<PredictConfig> = {},
 ): InventoryEstimate {
   const config = { ...DEFAULT_PREDICT_CONFIG, ...overrides };
-  const { product, now } = input;
+  const { now } = input;
   const mergeWithinDays = {
     ...DEFAULT_CONSUMPTION_RATE_CONFIG,
     ...config.rate,
   }.mergeWithinDays;
 
-  const rate = calculateConsumptionRate(input.purchases, now, config.rate, {
-    corrections: input.corrections,
-    typicalLeftoverAtPurchase: product.typicalLeftoverAtPurchase,
-  });
-  const { ratePerDay, source } = resolveRate(rate, product);
-
   const purchases = cleanPurchases(input.purchases, now, mergeWithinDays);
   const corrections = cleanCorrections(input.corrections, now);
-  const anchor = findAnchor(purchases, corrections, ratePerDay, product, config);
+
+  // The usual purchase is learned from what is actually bought; the stored value is only the first guess.
+  const usualQty = usualPurchase(purchases, input.product.normalPurchaseQty, config.usualPurchaseWindow);
+  const rateWith = (leftover: number | null) =>
+    calculateConsumptionRate(input.purchases, now, config.rate, {
+      corrections: input.corrections,
+      typicalLeftoverAtPurchase: leftover,
+    });
+
+  // Learn the leftover at purchase from stock counts given just before buying, then use it everywhere.
+  const firstRate = rateWith(input.product.typicalLeftoverAtPurchase);
+  const firstGuess = resolveRate(firstRate, { ...input.product, normalPurchaseQty: usualQty }).ratePerDay;
+  const measured = measureLeftovers(purchases, corrections, firstGuess, config.correctionFreshDays);
+  const typicalLeftover = chooseLeftover(measured, input.product.typicalLeftoverAtPurchase, config.leftoverMeasurementsToTrust);
+  const product: PredictProduct = { ...input.product, normalPurchaseQty: usualQty, typicalLeftoverAtPurchase: typicalLeftover.quantity };
+
+  // A lone measurement came from the very count the rate already learns from, so the rate
+  // only takes the learned leftover once there are enough measurements to call it typical.
+  const rate =
+    measured.length >= config.leftoverMeasurementsToTrust && typicalLeftover.quantity !== input.product.typicalLeftoverAtPurchase
+      ? rateWith(typicalLeftover.quantity)
+      : firstRate;
+  const { ratePerDay, source } = resolveRate(rate, product);
+  const anchor = findAnchor(purchases, corrections, ratePerDay, product, config, typicalLeftover.source);
 
   const thresholdDays =
     product.lowStockThresholdDays ??
@@ -155,6 +182,7 @@ export function predict(
     productId: product.id,
     unit: product.unit,
     normalPurchaseQty: product.normalPurchaseQty,
+    typicalLeftover,
     rate,
     rateSource: source,
     lowStockThresholdDays: thresholdDays,
@@ -288,6 +316,7 @@ function findAnchor(
   ratePerDay: number | null,
   product: PredictProduct,
   config: PredictConfig,
+  leftoverSource: LeftoverSource = "answer",
 ): Anchor | null {
   const lastPurchase = purchases[purchases.length - 1];
   const lastCorrection = corrections[corrections.length - 1];
@@ -326,7 +355,10 @@ function findAnchor(
   } else if (product.typicalLeftoverAtPurchase !== null) {
     leftover = product.typicalLeftoverAtPurchase;
     startingStock = "known";
-    detail = "Leftover at purchase uses your typical amount left when buying.";
+    detail =
+      leftoverSource === "learned"
+        ? "Leftover at purchase is what your stock counts before buying usually showed."
+        : "Leftover at purchase uses your typical amount left when buying.";
   } else {
     leftover = 0;
     startingStock = "assumed";
@@ -340,6 +372,59 @@ function findAnchor(
     startingStock,
     detail,
   };
+}
+
+type LeftoverSource = InventoryEstimate["typicalLeftover"]["source"];
+
+/** The median of the most recent purchase quantities, or `fallback` with no purchases. */
+function usualPurchase(purchases: PurchasePoint[], fallback: number, window: number): number {
+  const recent = purchases.slice(-window).map((p) => p.quantity);
+  return recent.length === 0 ? fallback : median(recent);
+}
+
+/**
+ * Each time the user counted their stock shortly before buying more (and
+ * bought nothing in between), we know roughly what was left at that purchase:
+ * the count, minus what would have been used by then.
+ */
+function measureLeftovers(
+  purchases: PurchasePoint[],
+  corrections: CorrectionPoint[],
+  ratePerDay: number | null,
+  freshDays: number,
+): number[] {
+  return purchases.flatMap((purchase, i) => {
+    const previous = purchases[i - 1]?.purchasedAt.getTime() ?? -Infinity;
+    const count = [...corrections]
+      .reverse()
+      .find((c) => c.recordedAt < purchase.purchasedAt && c.recordedAt.getTime() > previous);
+    if (!count) return [];
+    const days = (purchase.purchasedAt.getTime() - count.recordedAt.getTime()) / DAY_MS;
+    if (days > freshDays) return [];
+    return [Math.max(0, count.remainingQuantity - (ratePerDay ?? 0) * days)];
+  });
+}
+
+/**
+ * The leftover to assume at a purchase. Enough measurements beat the user's
+ * answer (either could be wrong, and several measurements are harder to get
+ * wrong than one guess); a lone measurement only fills in for no answer.
+ */
+function chooseLeftover(
+  measured: number[],
+  answer: number | null,
+  measurementsToTrust: number,
+): InventoryEstimate["typicalLeftover"] {
+  if (measured.length >= measurementsToTrust) return { quantity: median(measured), source: "learned" };
+  if (answer !== null) return { quantity: answer, source: "answer" };
+  if (measured.length > 0) return { quantity: median(measured), source: "learned" };
+  return { quantity: null, source: "none" };
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
 /** Whether a stock count is far enough from what we predicted at the time that it may be a mistake. */

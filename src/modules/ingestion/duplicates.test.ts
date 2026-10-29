@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProductSummary, PurchaseSummary } from "@/core/purchase-batch";
-import { detectPossibleDuplicates } from "./duplicates";
+import { detectAlreadySaved, detectPossibleDuplicates } from "./duplicates";
 
 const products: ProductSummary[] = [
   { id: "toilet", name: "Charmin Toilet Paper", brand: null, category: null, unit: "rolls", normalPurchaseQty: 12 },
@@ -108,5 +108,32 @@ describe("detectPossibleDuplicates", () => {
   it("treats a stored purchase with no key as a different submission", () => {
     const warnings = detectPossibleDuplicates(batch(), products, [{ ...existing, idempotencyKey: null }]);
     expect(warnings).toHaveLength(1);
+  });
+});
+
+describe("detectAlreadySaved", () => {
+  const saved = (lineIndex: number): PurchaseSummary => ({ ...existing, idempotencyKey: "same-receipt", lineIndex });
+  const items: Item[] = [
+    { productName: "Milk", quantity: 1 },
+    { productName: "Eggs", quantity: 12 },
+    { productName: "Bread", quantity: 1 },
+  ];
+
+  it("says nothing about a receipt that hasn't been saved", () => {
+    expect(detectAlreadySaved(batch({ idempotencyKey: "same-receipt" }, items), [existing])).toEqual([]);
+  });
+
+  it("says the receipt was saved, and which lines were", () => {
+    const warnings = detectAlreadySaved(batch({ idempotencyKey: "same-receipt" }, items), [saved(0), saved(2)]);
+    expect(warnings[0]!.code).toBe("already-saved");
+    expect(warnings[0]!.lineIndex).toBeUndefined();
+    expect(warnings[0]!.message).toContain("2 items");
+    expect(warnings.slice(1).map((w) => w.lineIndex)).toEqual([0, 2]);
+  });
+
+  it("goes by each line's own number when the batch has one", () => {
+    const numbered = items.map((item, i) => ({ ...item, line: [5, 7, 9][i] }));
+    const warnings = detectAlreadySaved(batch({ idempotencyKey: "same-receipt" }, numbered), [saved(7)]);
+    expect(warnings.slice(1).map((w) => w.lineIndex)).toEqual([1]);
   });
 });

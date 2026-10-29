@@ -26,6 +26,13 @@ export const PurchaseLineSchema = z.object({
   unit: text(40),
   /** Price paid for the line, in the smallest currency unit. */
   priceCents: z.number().int().nonnegative().optional(),
+  /**
+   * The line's own number in the source (its row on the receipt), when the
+   * sender sends only some of the lines. With the idempotencyKey it says which
+   * line this is, so sending the same receipt again with a line that was left
+   * out the first time stores just that line. Defaults to the position in `items`.
+   */
+  line: z.number().int().min(0).max(10_000).optional(),
 });
 
 export const PurchaseBatchSchema = z.object({
@@ -55,7 +62,14 @@ export const PurchaseBatchSchema = z.object({
   rawRef: z.string().max(500).optional(),
   /** For source "agent": the replenishment order this purchase came from. */
   orderId: z.uuid().optional(),
-  items: z.array(PurchaseLineSchema).min(1).max(200),
+  items: z
+    .array(PurchaseLineSchema)
+    .min(1)
+    .max(200)
+    .refine((items) => {
+      const numbers = items.map((item, index) => item.line ?? index);
+      return new Set(numbers).size === numbers.length;
+    }, "Two lines have the same line number"),
 });
 
 /** What a sender writes (currency may be left out). */
@@ -94,6 +108,8 @@ export interface ProductSummary {
   category: string | null;
   unit: string;
   normalPurchaseQty: number;
+  /** False when the user asked that lines not be matched to this product by its name (its aliases still count). */
+  matchByName?: boolean;
 }
 
 /**
@@ -106,4 +122,6 @@ export interface PurchaseSummary {
   quantity: number;
   purchasedAt: Date;
   idempotencyKey: string | null;
+  /** Which line of its submission it was (see PurchaseLineSchema.line), when known. */
+  lineIndex?: number | null;
 }

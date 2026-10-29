@@ -16,7 +16,7 @@ interface Props {
    * `review.sources` is how the receipt worded each saved line (parallel to the
    * batch's items); `review.skipped` is the wording of each line left out.
    */
-  onConfirm(batch: PurchaseBatchInput, review: { sources: string[]; skipped: string[] }): void;
+  onConfirm(batch: PurchaseBatchInput, review: { sources: string[]; skipped: string[]; codes: (string | null)[]; store: string | null }): void;
   onCancel(): void;
   /** Shown under the list of lines: a way to add another photo. */
   extra?: React.ReactNode;
@@ -28,7 +28,8 @@ interface LineState {
   /** "" means a new product. */
   productId: string;
   suggestedProductId: string;
-  matchedBy: "name" | "alias" | "similar" | null;
+  matchedBy: "code" | "name" | "alias" | "similar" | null;
+  code: string | null;
   sourceText: string;
   newName: string;
   newUnit: string;
@@ -59,6 +60,7 @@ function initialLines(draft: Draft): LineState[] {
       productId: item.productId ?? "",
       suggestedProductId: item.productId ?? "",
       matchedBy: info?.matchedBy ?? null,
+      code: info?.code ?? null,
       sourceText,
       newName: matched ? toDisplayName(sourceText) : item.productName,
       newUnit: matched ? "each" : item.unit,
@@ -107,6 +109,7 @@ export function ReceiptReview({ draft, products, busy, error, onConfirm, onCance
     const found: Record<number, string> = {};
     const items: NonNullable<PurchaseBatchInput["items"]> = [];
     const sources: string[] = [];
+    const codes: (string | null)[] = [];
     const skipped = lines.filter((line) => !line.include).map((line) => line.sourceText);
 
     for (const line of lines) {
@@ -130,8 +133,11 @@ export function ReceiptReview({ draft, products, busy, error, onConfirm, onCance
         quantity,
         unit,
         ...(price !== null && { priceCents: Math.round(price * 100) }),
+        // The receipt's own line number, so saving this receipt again later only adds lines left out this time.
+        line: line.index,
       });
       sources.push(line.sourceText);
+      codes.push(line.code);
     }
 
     setProblems(found);
@@ -141,7 +147,7 @@ export function ReceiptReview({ draft, products, busy, error, onConfirm, onCance
     setFormProblem(Object.keys(found).length > 0 ? "A few lines need a look." : null);
     if (Object.keys(found).length > 0 || items.length === 0) return;
 
-    onConfirm({ ...draft.batch, store: store.trim() || undefined, purchasedAt: date, items }, { sources, skipped });
+    onConfirm({ ...draft.batch, store: store.trim() || undefined, purchasedAt: date, items }, { sources, skipped, codes, store: store.trim() || null });
   }
 
   return (

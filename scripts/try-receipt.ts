@@ -17,7 +17,10 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { getDemoUser } from "@/lib/demo-user";
+import { loadDictionary, lookupProductCodes } from "@/modules/dictionary";
+import { createModelEmbedder } from "@/modules/ingestion/receipt/encoder-model";
 import { createReceiptExtractor } from "@/modules/ingestion/receipt/extractor";
+import { createSimilarWordings } from "@/modules/ingestion/receipt/similar-wordings";
 import { createGoogleVisionEngine } from "@/modules/ingestion/receipt/ocr/google-vision";
 import type { OcrEngine, OcrResult } from "@/modules/ingestion/receipt/ocr/types";
 import { listAliases, listIgnoredWordings } from "@/modules/inventory/aliases";
@@ -62,6 +65,10 @@ async function main() {
     ocr: cachedEngine(createGoogleVisionEngine(), fresh, tally),
     loadAliases: listAliases,
     loadIgnored: listIgnoredWordings,
+    // The same helpers as the app: the live dictionary, product-code lookups (kept in the database) and the encoder.
+    loadDictionary,
+    lookup: lookupProductCodes,
+    similar: createSimilarWordings(createModelEmbedder()),
   });
 
   for (const path of paths) {

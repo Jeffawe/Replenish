@@ -58,6 +58,8 @@ export async function ingestPurchaseBatch(
 
   // The unique (user, idempotencyKey, line) index decides: a line that was
   // already stored comes back empty here instead of being stored twice.
+  // Which line of the source each is, for the idempotency check (see PurchaseLineSchema.line).
+  const lineNumber = (index: number) => batch.items[index]!.line ?? index;
   const inserts = accepted.map(({ index, line, product }) =>
     db
       .insert(purchaseEvents)
@@ -75,7 +77,7 @@ export async function ingestPurchaseBatch(
         rawRef: batch.rawRef ?? null,
         orderId: batch.orderId ?? null,
         idempotencyKey: batch.idempotencyKey,
-        lineIndex: index,
+        lineIndex: lineNumber(index),
       })
       .onConflictDoNothing({
         target: [purchaseEvents.userId, purchaseEvents.idempotencyKey, purchaseEvents.lineIndex],
@@ -120,7 +122,7 @@ export async function ingestPurchaseBatch(
         purchaseEventId: row.id,
       });
     } else {
-      const existing = alreadyStored.get(index);
+      const existing = alreadyStored.get(lineNumber(index));
       items.push({
         index,
         result: "duplicate",
@@ -168,13 +170,14 @@ export async function listProductSummaries(userId: string): Promise<ProductSumma
   // Hidden products aren't offered for matching; a line naming one exactly still finds it and brings it back.
   return rows
     .filter((row) => row.archivedAt === null)
-    .map(({ id, name, brand, category, unit, normalPurchaseQty }) => ({
+    .map(({ id, name, brand, category, unit, normalPurchaseQty, matchByName }) => ({
       id,
       name,
       brand,
       category,
       unit,
       normalPurchaseQty,
+      matchByName,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -189,6 +192,7 @@ export async function listPurchasesNear(userId: string, around: Date): Promise<P
       quantity: purchaseEvents.quantity,
       purchasedAt: purchaseEvents.purchasedAt,
       idempotencyKey: purchaseEvents.idempotencyKey,
+      lineIndex: purchaseEvents.lineIndex,
     })
     .from(purchaseEvents)
     .where(

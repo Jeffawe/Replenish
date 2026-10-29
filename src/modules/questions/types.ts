@@ -20,6 +20,7 @@ export interface ProductFacts {
   id: string;
   name: string;
   unit: string;
+  /** The usual purchase, as the estimate learned it from what is bought. */
   normalPurchaseQty: number;
   /** The user said yes, keep track of this (or it predates the questions). */
   confirmed: boolean;
@@ -27,7 +28,7 @@ export interface ProductFacts {
   typicalLeftoverAtPurchase: number | null;
   estimate: Pick<
     InventoryEstimate,
-    "estimatedRemaining" | "confidence" | "isLow" | "rateSource" | "purchaseCount" | "anchor"
+    "estimatedRemaining" | "confidence" | "isLow" | "rateSource" | "purchaseCount" | "anchor" | "typicalLeftover"
   >;
   /** When the user last gave a stock count, if ever. */
   lastCountAt: Date | null;

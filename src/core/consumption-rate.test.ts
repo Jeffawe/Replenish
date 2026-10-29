@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  calculateConsumptionRate,
+  calculateConsumptionRate as weightedRate,
   type LevelObservation,
   type PurchasePoint,
 } from "./consumption-rate";
+
+// Most tests here check something other than recency, with plain pooled numbers,
+// so they switch the recency weighting off; it has its own tests at the end.
+const calculateConsumptionRate = (...[purchases, now, overrides = {}, evidence]: Parameters<typeof weightedRate>) =>
+  weightedRate(purchases, now, { recencyHalfLifeDays: Infinity, ...overrides }, evidence);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const start = Date.UTC(2026, 0, 1);
@@ -252,3 +257,27 @@ describe("calculateConsumptionRate: learning from corrections", () => {
   });
 });
 
+
+describe("calculateConsumptionRate: recent habits count more", () => {
+  // Used 12 rolls every 28 days for a long time, then started using them twice as fast.
+  const history = [buy(0), buy(28), buy(56), buy(84), buy(98), buy(112)];
+
+  it("moves toward the recent rate instead of the plain average", () => {
+    const plain = calculateConsumptionRate(history, at(112)).ratePerDay!;
+    const weighted = weightedRate(history, at(112)).ratePerDay!;
+    expect(plain).toBeCloseTo(60 / 112, 5);
+    expect(weighted).toBeGreaterThan(plain);
+    expect(weighted).toBeLessThan(12 / 14);
+  });
+
+  it("keeps a lone unusual gap out, but takes two in a row as the new habit", () => {
+    const blip = calculateConsumptionRate([buy(0), buy(28), buy(56), buy(70), buy(98), buy(126)], at(126));
+    expect(blip.intervals.filter((i) => i.excluded === "possible-early-purchase")).toHaveLength(1);
+    expect(calculateConsumptionRate(history, at(112)).intervals.every((i) => i.excluded === null)).toBe(true);
+  });
+
+  it("changes nothing when habits are steady", () => {
+    const steady = [buy(0), buy(28), buy(56), buy(84)];
+    expect(weightedRate(steady, at(84)).ratePerDay).toBeCloseTo(12 / 28, 5);
+  });
+});

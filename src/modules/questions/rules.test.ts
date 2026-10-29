@@ -23,6 +23,7 @@ const known = (overrides: Partial<ProductFacts> = {}, estimate: Partial<ProductF
     rateSource: "history",
     purchaseCount: 5,
     anchor: { kind: "purchase", at: daysAgo(10), quantity: 7, disputed: false },
+    typicalLeftover: { quantity: 1, source: "answer" },
     ...estimate,
   },
 });
@@ -31,7 +32,14 @@ const known = (overrides: Partial<ProductFacts> = {}, estimate: Partial<ProductF
 const fresh = (overrides: Partial<ProductFacts> = {}) =>
   known(
     { id: "p-eggs", name: "Eggs", unit: "each", normalPurchaseQty: 12, confirmed: false, typicalLeftoverAtPurchase: null, ...overrides },
-    { estimatedRemaining: null, confidence: 0, rateSource: "none", purchaseCount: 1, anchor: { kind: "purchase", at: daysAgo(1), quantity: 12, disputed: false } },
+    {
+      estimatedRemaining: null,
+      confidence: 0,
+      rateSource: "none",
+      purchaseCount: 1,
+      anchor: { kind: "purchase", at: daysAgo(1), quantity: 12, disputed: false },
+      typicalLeftover: { quantity: null, source: "none" },
+    },
   );
 
 const kindsFor = (facts: ProductFacts, snoozed = new Set<string>()) =>
@@ -58,8 +66,10 @@ describe("which questions are asked", () => {
     expect(kindsFor(known({ fallbackDaysPerPurchase: 14 }, { rateSource: "fallback" }))).toEqual([]);
   });
 
-  it("asks how much is usually left until it is answered", () => {
-    expect(kindsFor(known({ typicalLeftoverAtPurchase: null }))).toEqual(["leftover"]);
+  it("asks how much is usually left until it is answered or learned from stock counts", () => {
+    const unknown = { quantity: null, source: "none" } as const;
+    expect(kindsFor(known({ typicalLeftoverAtPurchase: null }, { typicalLeftover: unknown }))).toEqual(["leftover"]);
+    expect(kindsFor(known({ typicalLeftoverAtPurchase: null }, { typicalLeftover: { quantity: 2, source: "learned" } }))).toEqual([]);
   });
 
   it("checks a stock count that looked like a typo, and flags it", () => {

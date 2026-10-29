@@ -29,12 +29,12 @@ const WALMART = [
 describe("parseReceipt: a Walmart-style receipt", () => {
   const receipt = parseReceipt(WALMART, NOW);
 
-  it("finds the lines, ignoring codes, flags, headers and everything below the subtotal", () => {
+  it("finds the lines and their item codes, ignoring flags, headers and everything below the subtotal", () => {
     expect(receipt.lines).toEqual([
-      { name: "GV WHL MLK GL", quantity: 1, unit: null, priceCents: 398 },
-      { name: "CHARMIN ULTRA", quantity: 12, unit: null, priceCents: 1897 },
+      { name: "GV WHL MLK GL", quantity: 1, unit: null, priceCents: 398, code: "003120045678" },
+      { name: "CHARMIN ULTRA", quantity: 12, unit: null, priceCents: 1897, code: "003700012345" },
       { name: "BANANAS", quantity: 2.34, unit: "lb", priceCents: 136 },
-      { name: "EGGS LRG", quantity: 18, unit: null, priceCents: 428 },
+      { name: "EGGS LRG", quantity: 18, unit: null, priceCents: 428, code: "060383" },
     ]);
   });
 
@@ -64,8 +64,8 @@ describe("parseReceipt: other layouts", () => {
     );
     expect(receipt.store).toBe("Costco");
     expect(receipt.lines).toEqual([
-      { name: "KS TP", quantity: 30, unit: null, priceCents: 1999 },
-      { name: "ORG EGGS", quantity: 24, unit: null, priceCents: 849 },
+      { name: "KS TP", quantity: 30, unit: null, priceCents: 1999, code: "1234567" },
+      { name: "ORG EGGS", quantity: 24, unit: null, priceCents: 849, code: "7654321" },
     ]);
     expect(receipt.totalCents).toBe(2848);
   });
@@ -220,9 +220,9 @@ describe("parseReceipt: harder receipts", () => {
       NOW,
     );
     expect(receipt.lines).toEqual([
-      { name: "TURKEY FRANK", quantity: 1, unit: null, priceCents: 88 },
-      { name: "WINCO NOODLES", quantity: 2, unit: null, priceCents: 168 },
-      { name: "DM SPAG SAUCE", quantity: 1, unit: null, priceCents: 71 },
+      { name: "TURKEY FRANK", quantity: 1, unit: null, priceCents: 88, code: "4222281210" },
+      { name: "WINCO NOODLES", quantity: 2, unit: null, priceCents: 168, code: "7055280303" },
+      { name: "DM SPAG SAUCE", quantity: 1, unit: null, priceCents: 71, code: "2400052363" },
     ]);
     expect(receipt.subtotalCents).toBe(327);
   });
@@ -263,8 +263,8 @@ describe("parseReceipt: harder receipts", () => {
       NOW,
     );
     expect(receipt.lines).toEqual([
-      { name: "TATER TOTS", quantity: 1, unit: null, priceCents: 296 },
-      { name: "EGGS 6CTO", quantity: 1, unit: null, priceCents: 90 },
+      { name: "TATER TOTS", quantity: 1, unit: null, priceCents: 296, code: "001312000026" },
+      { name: "EGGS 6CTO", quantity: 1, unit: null, priceCents: 90, code: "007874212709" },
     ]);
   });
 
@@ -313,7 +313,7 @@ describe("parseReceipt: harder receipts", () => {
       ["HRI CL CHS 003120506000 F 5.88 0", "HRI CL CHS 003120506000 F 5.88 0", "VOIDED ENTRY", "HRI CL CHS 003120506000 F 5.88-0", "TOTAL 5.88"],
       NOW,
     );
-    expect(receipt.lines).toEqual([{ name: "HRI CL CHS", quantity: 1, unit: null, priceCents: 588 }]);
+    expect(receipt.lines).toEqual([{ name: "HRI CL CHS", quantity: 1, unit: null, priceCents: 588, code: "003120506000" }]);
   });
 
   it("recovers a total whose amount was rebuilt on the preceding row", () => {

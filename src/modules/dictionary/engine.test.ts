@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CATALOG_SIZE, identify } from "./catalog";
+import { createIdentifier } from "./engine";
+import { seedData } from "./seed";
+
+const identify = createIdentifier(seedData());
+const CATALOG_SIZE = seedData().items.filter((item) => item.consumable).length;
 
 const itemOf = (text: string) => identify(text).item?.name ?? null;
 

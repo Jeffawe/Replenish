@@ -113,7 +113,8 @@ const lastsFor: Kind = {
 
 const leftover: Kind = {
   kind: "leftover",
-  applies: (facts) => facts.typicalLeftoverAtPurchase === null && facts.estimate.purchaseCount > 0 && facts.normalPurchaseQty > 0,
+  // Only until it is known: answered, or measured from stock counts given just before buying.
+  applies: (facts) => facts.estimate.typicalLeftover.source === "none" && facts.estimate.purchaseCount > 0 && facts.normalPurchaseQty > 0,
   ask: (facts, config) => ({
     prompt: `When you buy more ${facts.name}, how much do you usually still have?`,
     hint: `Compared with the ${usual(facts)} you usually buy.`,

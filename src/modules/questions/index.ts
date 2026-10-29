@@ -41,7 +41,7 @@ function factsOf({ product, estimate, corrections }: InventoryItem): ProductFact
     id: product.id,
     name: product.name,
     unit: product.unit,
-    normalPurchaseQty: product.normalPurchaseQty,
+    normalPurchaseQty: estimate.normalPurchaseQty,
     confirmed: product.confirmedAt !== null,
     fallbackDaysPerPurchase: product.fallbackDaysPerPurchase,
     typicalLeftoverAtPurchase: product.typicalLeftoverAtPurchase,

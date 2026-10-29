@@ -5,10 +5,10 @@ import { afterAll, describe, expect, it } from "vitest";
 import { PurchaseBatchSchema } from "@/core/purchase-batch";
 import { db } from "@/db/client";
 import { inventoryCorrections, products, users } from "@/db/schema";
-import { listIgnoredWordings, saveAliases } from "./aliases";
+import { listAliases, listIgnoredWordings, saveAliases } from "./aliases";
 import { archiveProduct, confirmProduct, listSnoozed, restoreProduct, saveUsageAnswers, snoozeQuestion } from "./checks";
 import { ingestPurchaseBatch, listProductSummaries } from "./ingest";
-import { getInventory, recordStockCount, undoStockCount } from "./service";
+import { getInventory, mergeProducts, recordStockCount, saveProductEdit, undoStockCount } from "./service";
 
 const createdUsers: string[] = [];
 afterAll(async () => {
@@ -98,5 +98,74 @@ describe("product checks", () => {
 
     await snoozeQuestion(userId, productId, "stock-now", new Date("2026-11-30T12:00:00Z"));
     expect(await listSnoozed(userId, new Date("2026-11-01T12:00:00Z"))).toEqual(new Set([`${productId}:stock-now`]));
+  });
+});
+
+describe("renaming and merging products", () => {
+  const edit = (productId: string, name: string, matchByName = true) => ({
+    productId,
+    name,
+    matchByName,
+    unit: "each",
+    category: null,
+    brand: null,
+    remainingNow: null,
+    fallbackDaysPerPurchase: null,
+    typicalLeftoverAtPurchase: null,
+    lowStockThresholdDays: null,
+  });
+
+  it("keeps the old name as a wording that still matches the product", async () => {
+    const { userId, productId, product } = await setup();
+    expect(await saveProductEdit(userId, edit(productId, "Large Brown Eggs"))).toBe("saved");
+    expect(await product()).toMatchObject({ name: "Large Brown Eggs", normalizedName: "large brown eggs", matchByName: true });
+    expect(await listAliases(userId)).toContainEqual({ alias: "eggs", productId });
+  });
+
+  it("can turn off matching by the name", async () => {
+    const { userId, productId, product } = await setup();
+    await saveProductEdit(userId, edit(productId, "Mom's eggs", false));
+    expect((await product()).matchByName).toBe(false);
+    expect((await listProductSummaries(userId))[0]).toMatchObject({ matchByName: false });
+  });
+
+  it("won't take a name another product has", async () => {
+    const { userId, productId } = await setup();
+    await ingestPurchaseBatch(userId, PurchaseBatchSchema.parse({ source: "receipt", idempotencyKey: randomUUID(), purchasedAt: "2026-10-02", items: [{ productName: "Milk", quantity: 1, unit: "each" }] }));
+    expect(await saveProductEdit(userId, edit(productId, "MILK"))).toEqual({ nameTakenBy: "Milk" });
+  });
+
+  it("merges a product into another: history, wordings and its name move over, and it is gone", async () => {
+    const { userId, productId: eggs } = await setup();
+    const made = await ingestPurchaseBatch(
+      userId,
+      PurchaseBatchSchema.parse({ source: "receipt", idempotencyKey: randomUUID(), purchasedAt: "2026-10-05", items: [{ productName: "Lg Eggs", quantity: 18, unit: "each", brand: "Vital Farms" }] }),
+    );
+    const duplicate = made.items[0]!.result === "created" ? made.items[0]!.productId : "";
+    await saveAliases(userId, [{ alias: "#walmart#0123456", productId: duplicate }]);
+    await recordStockCount(userId, duplicate, 6);
+
+    expect(await mergeProducts(userId, duplicate, eggs)).toBe("merged");
+
+    const summaries = await listProductSummaries(userId);
+    expect(summaries.map((p) => p.id)).toEqual([eggs]);
+    expect(summaries[0]!.brand).toBe("Vital Farms");
+    const [item] = await getInventory(userId);
+    expect(item!.purchases).toHaveLength(2);
+    expect(item!.corrections).toHaveLength(1);
+    expect(await listAliases(userId)).toEqual(expect.arrayContaining([
+      { alias: "lg eggs", productId: eggs },
+      { alias: "#walmart#0123456", productId: eggs },
+    ]));
+  });
+
+  it("won't merge products counted in different units", async () => {
+    const { userId, productId: eggs } = await setup();
+    const made = await ingestPurchaseBatch(
+      userId,
+      PurchaseBatchSchema.parse({ source: "receipt", idempotencyKey: randomUUID(), purchasedAt: "2026-10-05", items: [{ productName: "Egg Cartons", quantity: 1, unit: "dozen" }] }),
+    );
+    const dozen = made.items[0]!.result === "created" ? made.items[0]!.productId : "";
+    expect(await mergeProducts(userId, dozen, eggs)).toEqual({ unitsDiffer: ["dozen", "each"] });
   });
 });

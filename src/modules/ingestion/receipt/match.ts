@@ -1,5 +1,6 @@
 import type { ProductSummary } from "@/core/purchase-batch";
 import { normalizeProductName } from "@/core/product-name";
+import { codeAlias, isCodeAlias } from "../aliases";
 import type { DraftLine } from "../types";
 
 /** A wording the user has already told us belongs to a product. */
@@ -17,6 +18,26 @@ export interface LineMatch {
 const STOP_WORDS = new Set(["the", "of", "and", "with", "for"]);
 const MIN_SIMILARITY = 0.75;
 const MIN_LEAD = 0.1;
+/** A wording this close to one the user confirmed (by letters, so OCR slips like "GI" for "GL" still match) counts as it. */
+const MIN_ALIAS_LIKENESS = 0.85;
+/** Short wordings are too easy to confuse one letter apart. */
+const MIN_ALIAS_LENGTH_FOR_LIKENESS = 6;
+
+/** 1 for identical text, 0 for nothing in common: 1 - edit distance / longer length. */
+function likeness(a: string, b: string): number {
+  if (a === b) return 1;
+  const longer = Math.max(a.length, b.length);
+  if (longer === 0) return 1;
+  let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) {
+      current[j] = Math.min(previous[j]! + 1, current[j - 1]! + 1, previous[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    previous = current;
+  }
+  return 1 - previous[b.length]! / longer;
+}
 
 const tokenize = (text: string) =>
   text
@@ -66,11 +87,26 @@ function similarity(receiptWords: string[], productWords: string[]): number {
  * one product clearly stands out) a similar-enough name. Null when nothing
  * fits; the line then becomes a new product unless the user picks one.
  */
-export function createMatcher(products: ProductSummary[], aliases: ProductAlias[]) {
+export function createMatcher(products: ProductSummary[], aliases: ProductAlias[], store?: string | null) {
   const byId = new Map(products.map((product) => [product.id, product]));
-  const byName = new Map(products.map((product) => [normalizeProductName(product.name), product]));
+  // A product the user said not to match by name is only found through its aliases.
+  const named = products.filter((product) => product.matchByName !== false);
+  const byName = new Map(named.map((product) => [normalizeProductName(product.name), product]));
   const byAlias = new Map(aliases.map((a) => [a.alias, byId.get(a.productId)]));
-  const words = products.map((product) => ({ product, words: tokenize(product.name) }));
+  const words = named.map((product) => ({ product, words: tokenize(product.name) }));
+  const wordings = aliases.filter((a) => !isCodeAlias(a.alias) && a.alias.length >= MIN_ALIAS_LENGTH_FOR_LIKENESS);
+
+  /** A confirmed wording close to this one, when one clearly is (and nothing close points at another product). */
+  const nearAlias = (key: string): ProductSummary | null => {
+    if (key.length < MIN_ALIAS_LENGTH_FOR_LIKENESS) return null;
+    const ranked = wordings
+      .map((a) => ({ productId: a.productId, score: likeness(key, a.alias) }))
+      .filter((r) => r.score >= MIN_ALIAS_LIKENESS)
+      .sort((a, b) => b.score - a.score);
+    const best = ranked[0];
+    if (!best || ranked.some((r) => r.productId !== best.productId && best.score - r.score < MIN_LEAD)) return null;
+    return byId.get(best.productId) ?? null;
+  };
 
   const mostSimilar = (name: string): ProductSummary | null => {
     const receiptWords = tokenize(name);
@@ -90,14 +126,27 @@ export function createMatcher(products: ProductSummary[], aliases: ProductAlias[
     return itemWords.length > 0 && holding.length === 1 ? holding[0].product : null;
   };
 
-  return function match(receiptName: string, itemName?: string): LineMatch | null {
+  /** The user's product for a dictionary item: the one named for it, or the one that holds its words. */
+  const forItem = (itemName: string): ProductSummary | null =>
+    byName.get(normalizeProductName(itemName)) ?? onlyProductContaining(itemName);
+
+  function match(receiptName: string, itemName?: string, code?: string): LineMatch | null {
     const key = normalizeProductName(receiptName);
 
-    const named = byName.get(key);
-    if (named) return { product: named, by: "name" };
+    // The store's own item code, once the user has confirmed it, names the item whatever the wording says.
+    const coded = code ? codeAlias(store, code) : null;
+    const byCode = coded ? byAlias.get(coded) : undefined;
+    if (byCode) return { product: byCode, by: "code" };
+
+    const byOwnName = byName.get(key);
+    if (byOwnName) return { product: byOwnName, by: "name" };
 
     const aliased = byAlias.get(key);
     if (aliased) return { product: aliased, by: "alias" };
+
+    // Close to a confirmed wording: likely the same item read slightly differently, so offered for checking.
+    const near = nearAlias(key);
+    if (near) return { product: near, by: "similar" };
 
     if (itemName) {
       const item = byName.get(normalizeProductName(itemName));
@@ -108,5 +157,7 @@ export function createMatcher(products: ProductSummary[], aliases: ProductAlias[
 
     const similar = mostSimilar(receiptName) ?? (itemName ? mostSimilar(itemName) : null);
     return similar ? { product: similar, by: "similar" } : null;
-  };
+  }
+
+  return Object.assign(match, { forItem });
 }

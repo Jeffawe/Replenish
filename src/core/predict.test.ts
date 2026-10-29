@@ -27,11 +27,12 @@ const product: PredictProduct = {
 const steady = [buy(0), buy(28), buy(56)];
 const steadyLong = [buy(0), buy(28), buy(56), buy(84), buy(112)];
 
+// Recency weighting has its own tests in consumption-rate.test.ts; here it would only blur the worked numbers.
 const run = (
   nowDay: number,
   purchases: PurchasePoint[] = steady,
   extra: Partial<Parameters<typeof predict>[0]> = {},
-) => predict({ product, purchases, corrections: [], now: day(nowDay), ...extra });
+) => predict({ product, purchases, corrections: [], now: day(nowDay), ...extra }, { rate: { recencyHalfLifeDays: Infinity } });
 
 describe("predict: the worked example", () => {
   // 19 days after the last purchase, as in the implementation doc.
@@ -192,7 +193,7 @@ describe("predict: error range", () => {
     const central = run(75, erratic);
     const cautious = predict(
       { product, purchases: erratic, corrections: [], now: day(75) },
-      { lowStockUsesEarliestEstimate: true },
+      { lowStockUsesEarliestEstimate: true, rate: { recencyHalfLifeDays: Infinity } },
     );
     // Same estimate, but the cautious setting can only ever flag more items, never fewer.
     expect(cautious.daysUntilRunOut).toBe(central.daysUntilRunOut);
@@ -286,5 +287,43 @@ describe("predict: confidence", () => {
     // Day-56 receipt missing: one gap of 56 days among 4 intervals.
     const estimate = run(160, [buy(0), buy(28), buy(84), buy(112), buy(140)]);
     expect(estimate.confidenceFactors.some((f) => f.label === "Unusual purchases")).toBe(true);
+  });
+});
+
+describe("predict: learning the usual purchase", () => {
+  it("is the median of recent purchases, so one odd purchase doesn't move it", () => {
+    // Stored as 1 (the first purchase was a single item), but they buy 12 at a time; one 120 is a misread.
+    const purchases = [buy(0, 1), buy(28, 12), buy(56, 12), buy(84, 120), buy(112, 12)];
+    expect(run(120, purchases, { product: { ...product, normalPurchaseQty: 1 } }).normalPurchaseQty).toBe(12);
+  });
+
+  it("is the stored value until there are purchases", () => {
+    expect(run(10, []).normalPurchaseQty).toBe(12);
+  });
+});
+
+describe("predict: learning how much is left when buying", () => {
+  // Rate 12 / 28 a day. Counts given 2 days before two purchases: 3 left, then 1 left.
+  const counted = [correction(26, 3.86), correction(54, 1.86)];
+
+  it("measures it from stock counts given just before buying", () => {
+    const estimate = run(60, steady, { corrections: counted });
+    expect(estimate.typicalLeftover.source).toBe("learned");
+    expect(estimate.typicalLeftover.quantity).toBeCloseTo(2, 1);
+  });
+
+  it("trusts enough measurements over the user's answer, and the answer over a single measurement", () => {
+    const answered = { ...product, typicalLeftoverAtPurchase: 6 };
+    expect(run(60, steady, { product: answered, corrections: counted }).typicalLeftover.source).toBe("learned");
+    expect(run(60, steady, { product: answered, corrections: [counted[1]!] }).typicalLeftover).toEqual({ quantity: 6, source: "answer" });
+  });
+
+  it("knows nothing without counts or an answer", () => {
+    expect(run(60).typicalLeftover).toEqual({ quantity: null, source: "none" });
+  });
+
+  it("ignores a count made too long before buying", () => {
+    // Counted on day 10, 18 days before the next purchase: too much could have changed.
+    expect(run(60, steady, { corrections: [correction(10, 3)] }).typicalLeftover.source).toBe("none");
   });
 });

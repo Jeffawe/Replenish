@@ -18,7 +18,7 @@ import { receiptKey, totalMismatch } from "./totals";
  */
 
 /** Warnings about the draft as a whole, rebuilt after a merge. Line warnings are kept. */
-const REBUILT = new Set(["total-mismatch", "date-missing", "restaurant-receipt", "possible-duplicate"]);
+const REBUILT = new Set(["total-mismatch", "date-missing", "restaurant-receipt", "possible-duplicate", "already-saved"]);
 
 const lineKey = (draft: Draft, index: number) => {
   const item = draft.batch.items[index]!;

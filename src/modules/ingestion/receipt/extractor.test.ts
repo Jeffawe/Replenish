@@ -50,6 +50,87 @@ function setup(words: OcrWord[], aliases: { alias: string; productId: string }[]
   return { extractor, read, photo };
 }
 
+describe("item codes", () => {
+  const rows: ([string] | [string, string])[] = [["Walmart"], ["CHOC MLK 007874235186 F", "3.98"], ["SUBTOTAL", "3.98"], ["10/20/26"]];
+
+  it("keeps a line's item code, and matches by a code the user confirmed at that store", async () => {
+    const { extractor } = setup(ocrOf(rows), [{ alias: "#walmart#007874235186", productId: "p-milk" }]);
+    const result = await extractor.extract({ image: new File(["photo"], "r.jpg", { type: "image/jpeg" }) }, ctx([milk, bananas]));
+    if (result.kind !== "draft") throw new Error("expected a draft");
+    expect(result.draft.lines![0]).toMatchObject({ sourceText: "CHOC MLK", code: "007874235186", matchedBy: "code" });
+    expect(result.draft.batch.items[0]).toMatchObject({ productId: "p-milk" });
+  });
+});
+
+describe("lines nothing else can place", () => {
+  const rows: ([string] | [string, string])[] = [["Walmart"], ["XQZ ZRB 007874235186 F", "3.98"], ["SUBTOTAL", "3.98"], ["10/20/26"]];
+  const photo = () => new File(["photo"], "r.jpg", { type: "image/jpeg" });
+  const build = (extra: Partial<ReceiptDeps>) =>
+    createReceiptExtractor({ ocr: { read: async () => ({ text: "", words: ocrOf(rows) }) }, loadAliases: async () => [], loadIgnored: async () => [], ...extra });
+  const draftOf = async (extractor: ReturnType<typeof build>, products: ProductSummary[] = []) => {
+    const result = await extractor.extract({ image: photo() }, ctx(products));
+    if (result.kind !== "draft") throw new Error("expected a draft");
+    return result.draft;
+  };
+
+  it("asks a product database about a UPC, and offers the user's product it leads to for checking", async () => {
+    const lookup = vi.fn(async () => new Map([["007874235186", { name: "Whole Milk", brand: "Great Value", categories: ["milks"] }]]));
+    const draft = await draftOf(build({ lookup }), [milk, bananas]);
+    expect(lookup).toHaveBeenCalledWith(["007874235186"]);
+    expect(draft.lines![0]).toMatchObject({ matchedBy: "similar" });
+    expect(draft.batch.items[0]).toMatchObject({ productId: "p-milk", brand: "Great Value" });
+  });
+
+  it("names a new product for what the database says it is, when the user has nothing like it", async () => {
+    const lookup = async () => new Map([["007874235186", { name: "Whole Milk", brand: "Great Value", categories: [] }]]);
+    const draft = await draftOf(build({ lookup }));
+    expect(draft.batch.items[0]).toMatchObject({ productName: "Milk", unit: "gallon", brand: "Great Value" });
+  });
+
+  it("carries on when the product database is down, or knows nothing", async () => {
+    const down = await draftOf(build({ lookup: async () => Promise.reject(new Error("offline")) }));
+    expect(down.batch.items[0]).toMatchObject({ productName: "Xqz Zrb" });
+    const unknown = await draftOf(build({ lookup: async () => new Map() }));
+    expect(unknown.batch.items[0]).toMatchObject({ productName: "Xqz Zrb" });
+  });
+
+  it("doesn't ask about a line the dictionary already knows", async () => {
+    const lookup = vi.fn(async () => new Map());
+    const known = [["Walmart"], ["WHL MLK 007874235186 F", "3.98"], ["SUBTOTAL", "3.98"], ["10/20/26"]] as ([string] | [string, string])[];
+    const extractor = createReceiptExtractor({ ocr: { read: async () => ({ text: "", words: ocrOf(known) }) }, loadAliases: async () => [], loadIgnored: async () => [], lookup });
+    await extractor.extract({ image: photo() }, ctx([milk]));
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it("offers the product whose confirmed wording a line is closest to, for checking", async () => {
+    const similar = { nearest: vi.fn(async () => [{ target: { kind: "product" as const, productId: "p-milk" }, score: 0.9, reference: "xqz zrb gl" }]) };
+    const draft = await draftOf(build({ similar }), [milk, bananas]);
+    expect(draft.lines![0]).toMatchObject({ matchedBy: "similar" });
+    expect(draft.batch.items[0]).toMatchObject({ productId: "p-milk" });
+  });
+
+  it("gives the encoder the user's confirmed wordings and the dictionary's phrases to compare against, never product names", async () => {
+    const nearest = vi.fn(async () => [null]);
+    await draftOf(build({ similar: { nearest }, loadAliases: async () => [{ alias: "gv whl mlk gl", productId: "p-milk" }, { alias: "#walmart#0078", productId: "p-milk" }] }), [milk]);
+    const [, references] = nearest.mock.calls[0] as unknown as [string[], { text: string }[]];
+    expect(references.some((r) => r.text === "gv whl mlk gl")).toBe(true);
+    expect(references.some((r) => r.text.startsWith("#"))).toBe(false);
+    expect(references.some((r) => r.text === "almond milk")).toBe(true);
+    expect(references.every((r) => r.text.includes(" "))).toBe(true);
+  });
+
+  it("carries on when the encoder fails, and leaves a restaurant's lines alone", async () => {
+    const draft = await draftOf(build({ similar: { nearest: async () => Promise.reject(new Error("no model")) } }));
+    expect(draft.batch.items[0]).toMatchObject({ productName: "Xqz Zrb" });
+
+    const nearest = vi.fn(async () => []);
+    const restaurant = [["Joe's Grill"], ["Server: Ann"], ["XQZ ZRB 007874235186", "3.98"], ["SUBTOTAL", "3.98"]] as ([string] | [string, string])[];
+    const extractor = createReceiptExtractor({ ocr: { read: async () => ({ text: "", words: ocrOf(restaurant) }) }, loadAliases: async () => [], loadIgnored: async () => [], similar: { nearest } });
+    await extractor.extract({ image: photo() }, ctx());
+    expect(nearest).not.toHaveBeenCalled();
+  });
+});
+
 describe("test samples", () => {
   it("hands the photo, its OCR and the draft to whoever keeps samples", async () => {
     const record = vi.fn<NonNullable<ReceiptDeps["record"]>>().mockResolvedValue();

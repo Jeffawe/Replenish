@@ -113,7 +113,7 @@ export function ReceiptFlow({ products, onFinished, onBack, onClose }: FlowProps
     }
   }
 
-  async function save(batch: PurchaseBatchInput, review: { sources: string[]; skipped: string[] }) {
+  async function save(batch: PurchaseBatchInput, review: Parameters<typeof submitAction>[1]) {
     const request = requestRef.current;
     setSaving(true);
     setSaveError(null);

@@ -56,10 +56,13 @@ export function InventoryCard({
   item,
   now,
   categories,
+  others,
 }: {
   item: InventoryItem;
   now: Date;
   categories: string[];
+  /** The user's products, to merge this one into. */
+  others: { id: string; name: string; unit: string }[];
 }) {
   const { product, estimate } = item;
   const status = getStatus(estimate);
@@ -85,11 +88,13 @@ export function InventoryCard({
               unit: product.unit,
               category: product.category,
               brand: product.brand,
-              normalPurchaseQty: product.normalPurchaseQty,
+              normalPurchaseQty: estimate.normalPurchaseQty,
               fallbackDaysPerPurchase: product.fallbackDaysPerPurchase,
               typicalLeftoverAtPurchase: product.typicalLeftoverAtPurchase,
               lowStockThresholdDays: product.lowStockThresholdDays,
+              matchByName: product.matchByName,
             }}
+            others={others.filter((other) => other.id !== product.id)}
             estimatedRemaining={estimate.estimatedRemaining}
             defaultThresholdDays={DEFAULT_PREDICT_CONFIG.defaultLowStockThresholdDays}
             categories={categories}

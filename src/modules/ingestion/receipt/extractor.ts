@@ -2,11 +2,12 @@ import { z } from "zod";
 import type { PurchaseLineSchema } from "@/core/purchase-batch";
 import type { DraftLine, ExtractContext, ExtractResult, Extractor, Warning } from "../types";
 import { normalizeProductName } from "@/core/product-name";
-import { identify, type Identified } from "./catalog";
+import { createIdentifier, itemFromLookup, seedData, type CodeLookup, type DictionaryData, type Identified } from "@/modules/dictionary/client";
 import { groupIntoRows } from "./layout";
-import { createMatcher, type ProductAlias } from "./match";
+import { createMatcher, type LineMatch, type ProductAlias } from "./match";
 import type { OcrEngine, OcrResult } from "./ocr/types";
 import type { ReadSample } from "./samples";
+import type { Reference, SimilarWordings } from "./similar-wordings";
 import { receiptKey, sha256, totalMismatch } from "./totals";
 import { parseReceipt, toDisplayName } from "./parse";
 
@@ -29,6 +30,12 @@ export interface ReceiptDeps {
   loadAliases(userId: string): Promise<ProductAlias[]>;
   /** Wordings (normalized) the user left out of an earlier receipt. */
   loadIgnored(userId: string): Promise<string[]>;
+  /** What the dictionary knows (see src/modules/dictionary). Defaults to the starter list. */
+  loadDictionary?(): Promise<DictionaryData>;
+  /** What a product database says about product codes (UPCs), for lines nothing else can place. May fail or return little. */
+  lookup?(codes: string[]): Promise<Map<string, CodeLookup>>;
+  /** Finds the confirmed wording a line is closest to, for lines nothing else can place. May fail; matching goes on without it. */
+  similar?: SimilarWordings;
   /** Told what every photo read produced, for keeping test samples. Must not throw; a failure here can't fail a read. */
   record?(sample: ReadSample): Promise<void>;
 }
@@ -55,6 +62,8 @@ const GENERIC_INGREDIENT = new Set([
  */
 export function createReceiptExtractor(deps: ReceiptDeps): Extractor<ReceiptInput> {
   async function draftFrom(bytes: Uint8Array, read: OcrResult, ctx: ExtractContext): Promise<ExtractResult> {
+    const dictionary = await (deps.loadDictionary ?? (async () => seedData()))();
+    const identify = createIdentifier(dictionary);
     if (read.words.length === 0) {
       return {
         kind: "skipped",
@@ -64,7 +73,7 @@ export function createReceiptExtractor(deps: ReceiptDeps): Extractor<ReceiptInpu
 
     const rows = groupIntoRows(read.words);
     const sourceText = rows.join("\n");
-    const parsed = parseReceipt(rows, ctx.now);
+    const parsed = parseReceipt(rows, ctx.now, identify);
     if (parsed.lines.length === 0) {
       return {
         kind: "skipped",
@@ -74,7 +83,7 @@ export function createReceiptExtractor(deps: ReceiptDeps): Extractor<ReceiptInpu
     }
 
     const [aliases, ignored] = await Promise.all([deps.loadAliases(ctx.userId), deps.loadIgnored(ctx.userId)]);
-    const match = createMatcher(ctx.products, aliases);
+    const match = createMatcher(ctx.products, aliases, parsed.store);
     const skippedBefore = new Set(ignored);
     const warnings: Warning[] = [];
     const items: Line[] = [];
@@ -84,13 +93,64 @@ export function createReceiptExtractor(deps: ReceiptDeps): Extractor<ReceiptInpu
     const restaurant = parsed.restaurant;
     const NOT_LOOKED_UP: Identified = { item: null, brand: null, withoutBrand: "" };
 
-    parsed.lines.forEach((line, index) => {
-      const known = restaurant ? NOT_LOOKED_UP : identify(line.name);
+    // What each line is, from the cheap, sure sources: the dictionary and the user's own products.
+    interface Resolved {
+      known: Identified;
+      isPreparedDish: boolean;
+      found: LineMatch | null;
+    }
+    const resolved: Resolved[] = parsed.lines.map((line) => {
+      const known = restaurant ? NOT_LOOKED_UP : identify(line.name, { code: line.code, store: parsed.store });
       // A restaurant dish containing a grocery word is the whole prepared dish,
       // not the single ingredient ("Chicken Marsala" is not raw Chicken).
       const isPreparedDish = PREPARED_DISH.test(line.name) && !!known.item && GENERIC_INGREDIENT.has(known.item.name);
       const catalogItem = isPreparedDish ? undefined : known.item;
-      const found = restaurant || isPreparedDish ? undefined : match(line.name, catalogItem?.consumable ? catalogItem.name : undefined);
+      const found = restaurant || isPreparedDish ? null : match(line.name, catalogItem?.consumable ? catalogItem.name : undefined, line.code);
+      return { known, isPreparedDish, found };
+    });
+    const open = (index: number) => !restaurant && !resolved[index]!.isPreparedDish && !resolved[index]!.found;
+
+    // Lines still unplaced that carry a product code: ask a product database what it is. Whatever it says is only
+    // a suggestion for the user to check, so a product it leads to is marked "check match".
+    const unplacedWithCode = parsed.lines.flatMap((line, i) => (open(i) && !resolved[i]!.known.item && line.code ? [i] : []));
+    if (deps.lookup && unplacedWithCode.length > 0) {
+      const answers = await deps.lookup(unplacedWithCode.map((i) => parsed.lines[i]!.code!)).catch(() => new Map<string, CodeLookup>());
+      for (const i of unplacedWithCode) {
+        const line = parsed.lines[i]!;
+        const answer = answers.get(line.code!);
+        const from = answer ? itemFromLookup(answer, identify) : null;
+        if (!from) continue;
+        const known: Identified = { ...resolved[i]!.known, item: from.item, brand: resolved[i]!.known.brand ?? from.brand };
+        const holder = from.item.consumable ? match.forItem(from.item.name) : null;
+        resolved[i] = { ...resolved[i]!, known, found: holder ? { product: holder, by: "similar" } : null };
+      }
+    }
+
+    // Lines still unplaced: find the confirmed wording each is closest to (the user's, and the dictionary's phrases).
+    const unplaced = parsed.lines.flatMap((_, i) => (open(i) ? [i] : []));
+    if (deps.similar && unplaced.length > 0) {
+      const references: Reference[] = [
+        ...aliases.filter((a) => !a.alias.startsWith("#")).map((a): Reference => ({ text: a.alias, target: { kind: "product", productId: a.productId } })),
+        ...dictionary.terms.filter((t) => t.text.includes(" ")).map((t): Reference => ({ text: t.text, target: { kind: "item", name: t.item } })),
+      ];
+      const nearest = await deps.similar.nearest(unplaced.map((i) => parsed.lines[i]!.name), references).catch(() => unplaced.map(() => null));
+      unplaced.forEach((i, k) => {
+        const hit = nearest[k];
+        if (!hit) return;
+        const target = hit.target;
+        const product = target.kind === "product" ? ctx.products.find((p) => p.id === target.productId) : match.forItem(target.name);
+        const item = target.kind === "item" ? dictionary.items.find((entry) => entry.name === target.name) : undefined;
+        resolved[i] = {
+          ...resolved[i]!,
+          known: item?.consumable && !resolved[i]!.known.item ? { ...resolved[i]!.known, item } : resolved[i]!.known,
+          found: product ? { product, by: "similar" } : null,
+        };
+      });
+    }
+
+    parsed.lines.forEach((line, index) => {
+      const { known, isPreparedDish, found } = resolved[index]!;
+      const catalogItem = isPreparedDish ? undefined : known.item;
       const product = found?.product;
 
       let quantity = line.quantity > 0 ? line.quantity : 1;
@@ -127,7 +187,12 @@ export function createReceiptExtractor(deps: ReceiptDeps): Extractor<ReceiptInpu
           : known.item && !known.item.consumable
           ? `Looks like ${known.item.category}, which doesn't need restocking.`
           : undefined;
-      lines.push({ sourceText: line.name, matchedBy: found?.by ?? null, ...(excludeReason && { excludeReason }) });
+      lines.push({
+        sourceText: line.name,
+        matchedBy: found?.by ?? null,
+        ...(line.code && { code: line.code }),
+        ...(excludeReason && { excludeReason }),
+      });
     });
 
     if (restaurant) {

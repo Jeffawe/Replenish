@@ -27,7 +27,9 @@ export interface DraftLine {
   /** How the input worded the line, before it was cleaned into a product name. */
   sourceText: string;
   /** How the line was tied to an existing product (its `productId` is set), or null if it wasn't. */
-  matchedBy: "name" | "alias" | "similar" | null;
+  matchedBy: "code" | "name" | "alias" | "similar" | null;
+  /** The store's own number for the item (a UPC), when the input printed one. Learned on confirm, like the wording. */
+  code?: string;
   /** Set when the line should start out left out of the purchase, saying why. */
   excludeReason?: string;
 }

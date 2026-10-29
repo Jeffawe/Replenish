@@ -21,7 +21,8 @@ async function wordingsOf(userId: string, productId: string): Promise<string[]> 
     .select({ alias: productAliases.alias })
     .from(productAliases)
     .where(and(eq(productAliases.userId, userId), eq(productAliases.productId, productId)));
-  return [...new Set([product.normalizedName, ...aliases.map((row) => row.alias)])];
+  // Item codes ("#walmart#0078...") aren't wordings a receipt line could be ticked by.
+  return [...new Set([product.normalizedName, ...aliases.map((row) => row.alias).filter((alias) => !alias.startsWith("#"))])];
 }
 
 /** "Yes, keep track of this": the product stops being asked about as new. */

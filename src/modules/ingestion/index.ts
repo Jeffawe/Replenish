@@ -16,13 +16,16 @@ import {
   listPurchasesNear,
 } from "@/modules/inventory/ingest";
 import type { IngestResult } from "@/core/purchase-batch";
+import { learnFromSave, loadDictionary, lookupProductCodes } from "@/modules/dictionary";
 import { lessonsFromReview, type Review } from "./aliases";
 import { emailExtractor } from "./email/extractor";
 import { syncInbox } from "./email/sync";
 import type { InboxProvider } from "./email/types";
 import { createReceiptExtractor } from "./receipt/extractor";
+import { createModelEmbedder } from "./receipt/encoder-model";
 import { createGoogleVisionEngine } from "./receipt/ocr/google-vision";
 import { createSampleStore, samplesFolder } from "./receipt/samples";
+import { createSimilarWordings } from "./receipt/similar-wordings";
 import { createRegistry } from "./registry";
 import { DraftSchema } from "./draft-schema";
 import type { Draft } from "./types";
@@ -43,6 +46,9 @@ const getExtractor = createRegistry([
     ocr: createGoogleVisionEngine(),
     loadAliases: listAliases,
     loadIgnored: listIgnoredWordings,
+    loadDictionary,
+    lookup: lookupProductCodes,
+    similar: createSimilarWordings(createModelEmbedder()),
     record: samples?.saveRead,
   }),
   emailExtractor,
@@ -98,9 +104,43 @@ export async function mergeReceiptDrafts(userId: string, previous: unknown, phot
  * its lines were worded for the products they landed on, and which wordings
  * they left out, so the next receipt needs less help.
  */
-export async function learnFromReview(userId: string, review: Review, result: IngestResult) {
+export async function learnFromReview(userId: string, review: Review, result: IngestResult, receiptKey?: string) {
   const { aliases, ignore, keep } = lessonsFromReview(review, result);
   await Promise.all([saveAliases(userId, aliases), updateIgnoredWordings(userId, ignore, keep)]);
+  if (receiptKey) await teachDictionary(userId, review, result, receiptKey);
+}
+
+/**
+ * Tells the shared dictionary what the user's choices showed: each saved line's
+ * wording (and the store's code for it) belongs to the product it landed on.
+ * The dictionary decides what to make of it (see src/modules/dictionary/learn.ts).
+ * A failure here never affects the save.
+ */
+async function teachDictionary(userId: string, review: Review, result: IngestResult, receipt: string) {
+  try {
+    const products = new Map((await listProductSummaries(userId)).map((product) => [product.id, product]));
+    const observations = result.items.flatMap((line) => {
+      if (line.result === "rejected") return [];
+      const wording = review.sources[line.index];
+      const product = products.get(line.productId);
+      if (!wording || !product) return [];
+      return [
+        {
+          receipt,
+          wording,
+          code: review.codes?.[line.index] ?? undefined,
+          store: review.store,
+          productName: product.name,
+          productUnit: product.unit,
+          productCategory: product.category,
+          productCreated: line.result === "created" && line.productCreated,
+        },
+      ];
+    });
+    await learnFromSave(observations);
+  } catch (error) {
+    console.error("Couldn't teach the dictionary", error);
+  }
 }
 
 /** Keeps what the user confirmed next to the sample it came from, when samples are on. Never throws. */

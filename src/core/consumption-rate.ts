@@ -58,6 +58,11 @@ export interface ConsumptionRateConfig {
   minCorrectionStretchDays: number;
   /** Below this many intervals the spread is too unreliable to report an error. */
   minIntervalsForError: number;
+  /**
+   * An interval's say in the rate halves every this many days since it ended,
+   * so a change in habits shows within a few purchases instead of a whole window.
+   */
+  recencyHalfLifeDays: number;
 }
 
 export const DEFAULT_CONSUMPTION_RATE_CONFIG: ConsumptionRateConfig = {
@@ -71,6 +76,7 @@ export const DEFAULT_CONSUMPTION_RATE_CONFIG: ConsumptionRateConfig = {
   unlikelyCountRatio: 2.5,
   minCorrectionStretchDays: 5,
   minIntervalsForError: 3,
+  recencyHalfLifeDays: 60,
 };
 
 export type ExcludedReason =
@@ -176,9 +182,12 @@ export function calculateConsumptionRate(
   const kept = intervals.filter((i) => i.excluded === null);
   if (kept.length === 0) return { ...EMPTY, intervals };
 
-  // Pooled: total used over total days, so long and short intervals count in proportion.
-  const totalConsumed = kept.reduce((sum, i) => sum + i.consumed, 0);
-  const totalDays = kept.reduce((sum, i) => sum + i.days, 0);
+  // Pooled: total used over total days, so long and short intervals count in proportion,
+  // with older intervals counting for less (see recencyHalfLifeDays).
+  const weight = (i: IntervalObservation) =>
+    0.5 ** (Math.max(0, now.getTime() - i.to.getTime()) / DAY_MS / config.recencyHalfLifeDays);
+  const totalConsumed = kept.reduce((sum, i) => sum + weight(i) * i.consumed, 0);
+  const totalDays = kept.reduce((sum, i) => sum + weight(i) * i.days, 0);
   const ratePerDay = totalConsumed / totalDays;
 
   let errorPerDay: number | null = null;
@@ -296,17 +305,20 @@ function flagOutliers(intervals: IntervalObservation[], config: ConsumptionRateC
   if (candidates.length < config.minIntervalsForOutlierCheck) return;
 
   const typical = median(candidates.map((i) => i.ratePerDay));
+  const side = (i: IntervalObservation) =>
+    i.ratePerDay < typical * config.missingPurchaseRatio ? "low" : i.ratePerDay > typical * config.earlyPurchaseRatio ? "high" : null;
+  const purchaseGaps = candidates.filter((i) => i.kind === "purchases");
+
   const flagged: IntervalObservation[] = [];
-  for (const interval of candidates) {
-    if (interval.kind !== "purchases") continue;
-    if (interval.ratePerDay < typical * config.missingPurchaseRatio) {
-      interval.excluded = "possible-missing-purchase";
-      flagged.push(interval);
-    } else if (interval.ratePerDay > typical * config.earlyPurchaseRatio) {
-      interval.excluded = "possible-early-purchase";
-      flagged.push(interval);
-    }
-  }
+  purchaseGaps.forEach((interval, k) => {
+    const unusual = side(interval);
+    if (!unusual) return;
+    // Two unusual gaps in a row, the same way, are a change in habits (a new baby, a new diet), not a blip.
+    const neighbours = [purchaseGaps[k - 1], purchaseGaps[k + 1]];
+    if (neighbours.some((other) => other && side(other) === unusual)) return;
+    interval.excluded = unusual === "low" ? "possible-missing-purchase" : "possible-early-purchase";
+    flagged.push(interval);
+  });
 
   if (flagged.length === candidates.length) {
     for (const interval of flagged) interval.excluded = null;
