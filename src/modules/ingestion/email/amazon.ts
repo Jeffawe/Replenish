@@ -79,11 +79,18 @@ function itemSummary(subject: string, text: string): { count: number; title: str
   return title && Number.isFinite(count) && count > 0 ? { count, title } : null;
 }
 
+/** The order number: after "Order #" (or "Order number:"), else any number shaped like one (3-7-7 digits). */
+function findOrderId(text: string): string | null {
+  return (
+    /Order\s*(?:#|number|no\.?)?\s*[:#]?\s*(\d{3}-\d{7}-\d{7})/i.exec(text)?.[1] ?? /(?<![\d-])(\d{3}-\d{7}-\d{7})(?![\d-])/.exec(text)?.[1] ?? null
+  );
+}
+
 export const amazonReader: OrderReader = {
   async read(message: EmailMessage): Promise<ReadOrder | null> {
     // Only the order confirmation ("Ordered: ..."), never a shipping notice or an ad.
     if (!/\bOrdered\b/i.test(message.subject)) return null;
-    const orderId = /Order\s*#\s*(\d{3}-\d{7}-\d{7})/i.exec(message.text)?.[1];
+    const orderId = findOrderId(message.text);
     const summary = itemSummary(message.subject, message.text);
     if (!orderId || !summary) return null;
 

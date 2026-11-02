@@ -69,6 +69,19 @@ describe("amazonReader", () => {
     expect(order?.arrivesAt).toBeNull();
   });
 
+  it("finds the order number however it is labelled, or by its shape alone", async () => {
+    for (const label of ["Order #: 111-2222222-3333333", "Order number: 111-2222222-3333333", "Order #\n111-2222222-3333333", "Your order 111-2222222-3333333 is confirmed"]) {
+      const order = await amazonReader.read(mail({ text: `Arriving today\n${label}\n` }), "Amazon");
+      expect(order?.orderId).toBe("111-2222222-3333333");
+    }
+  });
+
+  it("finds the order number when Amazon hides an invisible character before it", async () => {
+    // The real email prints "Order # <U+202B>114-...": a right-to-left mark that \s does not match.
+    const order = await amazonReader.read(mail({ text: "Arriving tomorrow\n1 item: Phone Accessories\nOrder # \u202b111-2222222-3333333\n" }), "Amazon");
+    expect(order?.orderId).toBe("111-2222222-3333333");
+  });
+
   it("ignores anything that isn't an order confirmation", async () => {
     expect(await amazonReader.read(mail({ subject: "Shipped: Phone Accessories" }), "Amazon")).toBeNull();
     expect(await amazonReader.read(mail({ subject: "Prime Big Deal Days is Oct 6-7" }), "Amazon")).toBeNull();
