@@ -24,6 +24,32 @@ const order: ReadOrder = {
   ],
 };
 
+describe("email extractor with the real readers", () => {
+  it("turns an Amazon confirmation into a draft", async () => {
+    const result = await createEmailExtractor().extract(
+      {
+        ...message(),
+        subject: "Ordered 2 items: Dish Soap",
+        text: "Arriving tomorrow\nOrder # 114-0000000-0000001\n",
+      },
+      ctx(),
+    );
+    if (result.kind !== "draft") throw new Error(`expected a draft, got: ${JSON.stringify(result)}`);
+    expect(result.draft.batch).toMatchObject({
+      source: "email",
+      store: "Amazon",
+      idempotencyKey: "email-amazon-114-0000000-0000001",
+      purchasedAt: new Date("2026-11-02T12:00:00Z"),
+      items: [{ productName: "Dish Soap", quantity: 2, unit: "each" }],
+    });
+  });
+
+  it("still can't read Walmart", async () => {
+    const result = await createEmailExtractor().extract(message("Walmart <orders@walmart.com>"), ctx());
+    expect(result).toEqual({ kind: "skipped", reason: "We can't read Walmart order emails yet" });
+  });
+});
+
 describe("email extractor", () => {
   it("skips a store nothing can read yet, without reading", async () => {
     const read = vi.fn();

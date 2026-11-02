@@ -19,7 +19,7 @@ function what(entry: { outcome: string; reason: string | null; retailer: string 
     const count = entry.itemCount ?? 0;
     return `Added ${count} ${count === 1 ? "item" : "items"} from ${entry.retailer ?? "an order"}. Waiting for your OK.`;
   }
-  if (entry.outcome === "verification") return "Gmail's confirmation code (shown above).";
+  if (entry.outcome === "verification") return `${entry.reason ?? "Gmail's confirmation email"}. Shown above.`;
   return `Skipped. ${entry.reason ?? ""}`.trim();
 }
 
@@ -48,8 +48,9 @@ export default function EmailOrdersPage() {
 async function EmailSetup() {
   const user = await requireUser();
   const setup = await getEmailSetup(user.id);
-  const storeNames = setup.stores.map((store) => store.name);
-  const supported = storeNames.length > 1 ? `${storeNames.slice(0, -1).join(", ")} and ${storeNames.at(-1)}` : (storeNames[0] ?? "no stores");
+  const readable = setup.stores.filter((store) => store.readable);
+  const comingSoon = setup.stores.filter((store) => !store.readable).map((store) => store.name);
+  const list = (names: string[]) => (names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? ""));
 
   if (!setup.address) {
     return (
@@ -78,9 +79,12 @@ async function EmailSetup() {
           </li>
           <li>Choose &ldquo;Forward it to&rdquo; your private address and create the filter. Repeat for each store you shop at.</li>
         </ol>
-        <p className={MUTED}>For now we can read orders from {supported}. Email from any other store is dropped without being read.</p>
+        <p className={MUTED}>
+          For now we can read orders from {list(readable.map((store) => store.name)) || "no stores"}.
+          {comingSoon.length > 0 && ` ${list(comingSoon)} ${comingSoon.length > 1 ? "are" : "is"} coming soon.`} Email from any other store is dropped without being read.
+        </p>
         <ul className="flex flex-col gap-3">
-          {setup.stores.map((store) => (
+          {readable.map((store) => (
             <li key={store.name} className="flex flex-col gap-1">
               <span className="text-sm font-medium">{store.name}</span>
               <CopyField value={store.from} label={`${store.name} Gmail filter`} />

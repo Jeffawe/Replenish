@@ -1,3 +1,4 @@
+import { amazonReader } from "./amazon";
 import type { EmailMessage } from "./types";
 
 /**
@@ -31,9 +32,9 @@ export interface OrderReader {
 
 /**
  * Readers written for one store, by the store's name (as in retailers.ts).
- * None yet. Add a store's reader here once its emails can be read.
+ * Add a store's reader here once its emails can be read (write it from a real email).
  */
-const STORE_READERS: Record<string, OrderReader> = {};
+const STORE_READERS: Record<string, OrderReader> = { Amazon: amazonReader };
 
 /**
  * A reader that can read any store's email: the place for a language model.

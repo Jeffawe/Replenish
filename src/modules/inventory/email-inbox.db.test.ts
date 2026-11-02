@@ -58,6 +58,10 @@ describe("email inbox", () => {
     await saveVerificationCode(userId, null, "https://mail-settings.google.com/mail/vf-abc");
     expect(await readVerification(userId)).toEqual({ code: null, link: "https://mail-settings.google.com/mail/vf-abc" });
     expect(await readVerification(userId, new Date(Date.now() + 31 * 60 * 1000))).toBeNull();
+
+    // Once any other email has arrived, forwarding works and the confirmation is no longer offered.
+    await logEmail(userId, { outcome: "dropped", reason: "Not from a store we read" });
+    expect(await readVerification(userId)).toBeNull();
   });
 
   it("logs outcomes newest first, keeps nothing else, and clears", async () => {

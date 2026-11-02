@@ -1,4 +1,4 @@
-import { and, desc, eq, lt } from "drizzle-orm";
+import { and, desc, eq, gt, lt, ne } from "drizzle-orm";
 import { db } from "@/db/client";
 import { emailInboxes, emailLog } from "@/db/schema";
 
@@ -57,7 +57,15 @@ export async function readVerification(userId: string, now = new Date()): Promis
     .from(emailInboxes)
     .where(eq(emailInboxes.userId, userId));
   if (!row?.at || now.getTime() - row.at.getTime() >= CODE_LIFETIME_MS) return null;
-  return row.code || row.link ? { code: row.code, link: row.link } : null;
+  if (!row.code && !row.link) return null;
+
+  // Any other email arriving after it shows forwarding already works, so there is nothing left to confirm.
+  const [later] = await db
+    .select({ id: emailLog.id })
+    .from(emailLog)
+    .where(and(eq(emailLog.userId, userId), gt(emailLog.receivedAt, row.at), ne(emailLog.outcome, "verification")))
+    .limit(1);
+  return later ? null : { code: row.code, link: row.link };
 }
 
 /** The latest Gmail confirmation code, while it's still fresh. */

@@ -44,6 +44,20 @@ function googleConfirmLink(text: string): string | null {
   return null;
 }
 
+/** Where an email's links point (hostnames only, never the paths), so a missing confirm link can be explained. */
+export function linkHosts(text: string): string[] {
+  const hosts = new Set<string>();
+  for (const match of text.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) {
+    try {
+      hosts.add(new URL(match[0]).hostname.toLowerCase());
+    } catch {
+      // Not a link.
+    }
+    if (hosts.size >= 5) break;
+  }
+  return [...hosts];
+}
+
 /**
  * Gmail asks the new forwarding address to confirm. If this is that email, its code and
  * confirm link (either may be missing). It has to come from Google and be about forwarding.
@@ -94,7 +108,13 @@ export async function handleInboundEmail(raw: unknown, deps: InboundDeps): Promi
   const confirmation = gmailConfirmation(email.from, email.subject, email.text);
   if (confirmation) {
     await deps.saveVerificationCode(userId, confirmation.code, confirmation.link);
-    await deps.log(userId, { outcome: "verification", reason: "Gmail's confirmation code" });
+    const hosts = linkHosts(email.text);
+    await deps.log(userId, {
+      outcome: "verification",
+      reason: confirmation.link
+        ? "Gmail's confirmation email (link and code)"
+        : `Gmail's confirmation email. No confirm link found${hosts.length ? `; its links go to ${hosts.join(", ")}` : "; it has no links"}`,
+    });
     return { outcome: "verification" };
   }
 

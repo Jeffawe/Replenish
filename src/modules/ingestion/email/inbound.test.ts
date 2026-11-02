@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, type Mock } from "vitest";
 import type { IngestResult } from "@/core/purchase-batch";
-import { gmailConfirmation, handleInboundEmail, verificationCode, type InboundDeps } from "./inbound";
+import { gmailConfirmation, handleInboundEmail, linkHosts, verificationCode, type InboundDeps } from "./inbound";
 import { addressFor, newToken, tokenFromAddress } from "./address";
 import { originalSender, retailerOf } from "./retailers";
 
@@ -160,6 +160,13 @@ describe("retailers", () => {
   });
   it("leaves a direct sender alone", () => {
     expect(originalSender("auto-confirm@amazon.com", "")).toBe("auto-confirm@amazon.com");
+  });
+});
+
+describe("linkHosts", () => {
+  it("lists hostnames only, once each, never paths", () => {
+    expect(linkHosts("see https://support.google.com/mail/answer/10957?x=secret and https://support.google.com/other, http://a.example.com/p")).toEqual(["support.google.com", "a.example.com"]);
+    expect(linkHosts("no links here")).toEqual([]);
   });
 });
 

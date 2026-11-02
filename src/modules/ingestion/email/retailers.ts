@@ -1,3 +1,5 @@
+import { canRead } from "./reader";
+
 /** A store whose order emails we read. */
 export interface Retailer {
   name: string;
@@ -15,12 +17,13 @@ export interface Retailer {
  */
 const RETAILERS: Retailer[] = [
   { name: "Amazon", domains: ["amazon.com"], from: "auto-confirm@amazon.com" },
-  { name: "Walmart", domains: ["walmart.com"], from: "help@walmart.com" },
+  // Not verified against a real order email yet (no reader either), so the setup page doesn't offer a filter for it.
+  { name: "Walmart", domains: ["walmart.com"], from: "walmart.com" },
 ];
 
-/** The stores the setup page offers, with the address to put in Gmail's filter. */
-export function supportedStores(): { name: string; from: string }[] {
-  return RETAILERS.map(({ name, from }) => ({ name, from }));
+/** The stores the setup page lists. Only a store something can read yet gets a filter to copy. */
+export function supportedStores(): { name: string; from: string; readable: boolean }[] {
+  return RETAILERS.map(({ name, from }) => ({ name, from, readable: canRead(name) }));
 }
 
 /** The domain of an address like `Name <a@b.com>` or `a@b.com`, lowercased, or null. */
