@@ -10,6 +10,8 @@ import { z } from "zod";
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** How far ahead a pending order's expected arrival may be. */
+const MAX_PENDING_AHEAD_DAYS = 60;
 
 export const PurchaseLineSchema = z.object({
   /** Name as the sender has it. Matched to a product ignoring case and spacing. */
@@ -53,9 +55,17 @@ export const PurchaseBatchSchema = z.object({
    */
   idempotencyKey: z.string({ error: "idempotencyKey is required" }).trim().min(8).max(200),
   store: text(120).optional(),
-  purchasedAt: z.coerce
-    .date({ error: "purchasedAt must be a valid date, like 2026-10-20" })
-    .refine((date) => date.getTime() <= Date.now() + DAY_MS, "Purchase date is in the future"),
+  /**
+   * When it was bought, or for a pending order the date it is expected to
+   * arrive, which may be a little ahead (see `status`).
+   */
+  purchasedAt: z.coerce.date({ error: "purchasedAt must be a valid date, like 2026-10-20" }),
+  /**
+   * "pending" for an order nobody has looked at yet (an automatic source such
+   * as email): it counts in estimates but waits for the user to approve or
+   * reject it. Defaults to "approved". Only a pending batch may be dated ahead.
+   */
+  status: z.enum(["approved", "pending"]).default("approved"),
   /** ISO 4217 code. */
   currency: z.string().trim().toUpperCase().length(3).default("USD"),
   /** The sender's own pointer to the raw receipt or email. Stored, never interpreted. */
@@ -70,7 +80,15 @@ export const PurchaseBatchSchema = z.object({
       const numbers = items.map((item, index) => item.line ?? index);
       return new Set(numbers).size === numbers.length;
     }, "Two lines have the same line number"),
-});
+})
+  .refine(
+    (batch) => batch.status === "pending" || batch.purchasedAt.getTime() <= Date.now() + DAY_MS,
+    { path: ["purchasedAt"], message: "Purchase date is in the future" },
+  )
+  .refine(
+    (batch) => batch.purchasedAt.getTime() <= Date.now() + MAX_PENDING_AHEAD_DAYS * DAY_MS,
+    { path: ["purchasedAt"], message: `Expected arrival is more than ${MAX_PENDING_AHEAD_DAYS} days away` },
+  );
 
 /** What a sender writes (currency may be left out). */
 export type PurchaseBatchInput = z.input<typeof PurchaseBatchSchema>;

@@ -108,6 +108,8 @@ The same file exports `listProductSummaries` and `listPurchasesNear`, the two re
 
 Neither knows anything about a particular source. `extractAction` turns an `ExtractionError` into `{ ok: false, error: "failed", message }`. `submitAction` also takes an optional list of how each line was worded, and remembers those wordings as product aliases (see [Receipts](#receipts)). The browser must never call `/api/ingest` directly, because that endpoint needs a secret key.
 
+**Manual entry** ([ingest/manual/](../src/app/ingest/manual/manual-flow.tsx)) has no producer and no `extractAction`: the form builds a `manual` batch itself (idempotency key made when the form opens) and calls `submitAction`, since there is nothing to read or review.
+
 Today the only UI using them is the **+** button on the dashboard ([add-purchases/](../src/app/dashboard/add-purchases/)), which only shows the menu of sources and the finished screen. Each source's own screens are a *flow* ([flow-kit.tsx](../src/app/ingest/flow-kit.tsx)); the receipt one is in [ingest/receipt/](../src/app/ingest/receipt/)..
 
 ### HTTP endpoints (outside services)
@@ -127,6 +129,17 @@ Email has no way to push, so it is polled. `syncInbox` in [email/sync.ts](../src
 1. Reads messages since a time from an `InboxProvider` ([email/types.ts](../src/modules/ingestion/email/types.ts)).
 2. For each message, runs the email producer, then submits any draft with **no human review**.
 3. Reports each message as `stored`, `duplicate`, `rejected`, `skipped` or `failed`. Warnings are reported, not blocking. One failing message never stops the others.
+
+### Email forwarding (built, waiting for a reader)
+
+Decided with the user: no mailbox access. Each user gets a private address `o-<token>@EMAIL_DOMAIN` ([address.ts](../src/modules/ingestion/email/address.ts)) and a Gmail filter forwards store order emails to it. Cloudflare Email Routing sends everything for the domain to a Worker ([cloudflare/email-worker/](../cloudflare/email-worker/README.md)), which posts the sender, subject and text to `POST /api/email/inbound` ([route](../src/app/api/email/inbound/route.ts), secret `EMAIL_WORKER_SECRET`, separate from `INGEST_API_KEY`).
+
+[inbound.ts](../src/modules/ingestion/email/inbound.ts) handles each email, in order: find the user by token (unknown: ignored, never logged); keep Gmail's forwarding confirmation code (shown on the setup page for 30 minutes); drop anything not from a store in [retailers.ts](../src/modules/ingestion/email/retailers.ts) before it is read; otherwise run the email producer and submit the draft as a **pending** batch (see [Pending purchases](#pending-purchases-automatic-sources)).
+
+- **Privacy, as promised to the user** (the setup page says the same, keep them in step): we see only what is forwarded; non-store mail is dropped unread; the email's text, sender and subject are never stored; `email_log` holds only the outcome and a reason; the email passes through Cloudflare and our server in memory. If the producer ever sends text to a third party (an LLM), the setup page's wording must change first.
+- **Setup page** `/email-orders`: the address, the Gmail steps and filter, the confirmation code, the log, and "Stop and delete" (a new token; the old address stops working).
+- **Env:** `EMAIL_DOMAIN` (the address's domain; unset hides the feature), `EMAIL_WORKER_SECRET` (also set on the Worker).
+- **Not done:** the producer. [email/extractor.ts](../src/modules/ingestion/email/extractor.ts) still skips every email, so a real store email is logged as "skipped" until it can read one. It must send only confident product matches as `productId`, use the expected delivery date as `purchasedAt`, and key the batch on the store's order number.
 
 Today the inbox is [a simulated, in-memory one](../src/modules/ingestion/email/inbox/simulated.ts) and it is empty. Re-reading mail is safe because the idempotency key makes a repeat a `duplicate`.
 
@@ -158,6 +171,24 @@ browser: preview ─▶ Add ─▶ shrink photo ─▶ extractAction ─▶ OCR 
 **Aliases.** On confirm, the way the receipt worded each stored line (`GV WHL MLK GL`) is saved in `product_aliases` ([schema](../src/db/schema.ts), [aliases.ts](../src/modules/inventory/aliases.ts)) against the product it landed on, including a product that line just created. The next receipt with that wording matches with no help. Choosing a different product for a line moves the alias to it.
 
 **Setup.** Needs `GOOGLE_VISION_API_KEY` in `.env.local`: a Google Cloud API key, restricted to the Cloud Vision API, on a project with billing attached (the first 1,000 receipts a month are free). Without a key the dialog says so.
+
+## Pending purchases (automatic sources)
+
+A source nobody reviews at the moment (email) submits its batch with `status: "pending"`. Decided with the user: **count it now, ask later.** Pending purchases are in the ledger and in estimates straight away; the user is asked when they next open the dashboard ([app/pending/](../src/app/pending/): a quiet card, never a pop-up).
+
+| | Line for a product the user already had | Line that made a new product |
+|---|---|---|
+| Counts in estimates | yes | yes |
+| Time limit (`pending_until`) | 10 days from arrival, then it counts as approved | none |
+| "Looks right" | approved (quantity and product can be corrected) | approved, product marked kept (so "keep tracking?" isn't asked again) |
+| "Not mine" | the purchase is deleted | the purchase and the product it made are deleted |
+| No answer | approved after 10 days | counts as normal, but the product stays unconfirmed (`isConfirmed`), so future auto-buy leaves it alone |
+
+- **Which line is which** is decided by the receiver: a line that created its product has no limit. An email extractor must send only *confident* matches (store code, exact name, learned alias) as `productId`; a "Check match" guess is sent by name alone, so it behaves like a new product.
+- **Date.** A pending batch's `purchasedAt` is the expected delivery date and may be up to 60 days ahead. Estimates leave out a purchase dated after now ([core/arrived.ts](../src/core/arrived.ts)), so it counts from that day.
+- **Rejected lines are remembered** (`rejected_lines`, keyed like the idempotency key), so the shipping and delivery emails for the same order can't bring them back. The receiver answers them `rejected`.
+- **The questions wait.** A product an unanswered order made gets no "keep tracking?" or other question until the order is answered.
+- Code: rules in [core/pending.ts](../src/core/pending.ts), storage and answers in [inventory/pending.ts](../src/modules/inventory/pending.ts), tests in `pending.test.ts` and `pending.db.test.ts`.
 
 ## Adding a new ingestion method
 

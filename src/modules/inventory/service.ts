@@ -10,6 +10,7 @@ import {
   type PurchaseEventRow,
 } from "@/db/schema";
 import type { InventoryEstimate } from "@/core/estimate";
+import { arrived } from "@/core/arrived";
 import { predict } from "@/core/predict";
 import {
   getProduct,
@@ -64,11 +65,13 @@ export async function getInventory(userId: string, now?: Date): Promise<Inventor
   const tracked = productRows.filter((product) => product.archivedAt === null);
   // Read the clock after the queries so it is a request-time value.
   const at = now ?? new Date();
+  // An order still on its way (a pending email order) isn't stock yet.
+  const here = arrived(purchaseRows, at);
 
   const items = tracked.map((product) =>
     buildItem(
       product,
-      purchaseRows.filter((p) => p.productId === product.id),
+      here.filter((p) => p.productId === product.id),
       correctionRows.filter((c) => c.productId === product.id),
       at,
     ),
@@ -157,7 +160,8 @@ async function currentGuess(userId: string, product: Product): Promise<number | 
     listProductPurchaseEvents(userId, product.id),
     listProductCorrections(userId, product.id),
   ]);
-  return buildItem(product, purchases, corrections, new Date()).estimate.estimatedRemaining;
+  const now = new Date();
+  return buildItem(product, arrived(purchases, now), corrections, now).estimate.estimatedRemaining;
 }
 
 /**

@@ -18,3 +18,15 @@ export function checkApiAccess(request: Request): Response | null {
   const ok = given.length === wanted.length && timingSafeEqual(given, wanted);
   return ok ? null : Response.json({ error: "Unauthorized" }, { status: 401 });
 }
+
+/**
+ * For a caller with its own secret (the email Worker): always requires it, even in
+ * development, since the endpoint is reachable from the internet. No secret set means 503.
+ */
+export function checkSecret(request: Request, expected: string | undefined): Response | null {
+  if (!expected) return Response.json({ error: "Not configured" }, { status: 503 });
+  const header = request.headers.get("authorization") ?? "";
+  const given = Buffer.from(header.startsWith("Bearer ") ? header.slice(7) : "");
+  const wanted = Buffer.from(expected);
+  return given.length === wanted.length && timingSafeEqual(given, wanted) ? null : Response.json({ error: "Unauthorized" }, { status: 401 });
+}

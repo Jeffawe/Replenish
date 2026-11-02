@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { AddPurchases } from "./add-purchases/add-purchases";
 import { AddPurchasesPlaceholder } from "./add-purchases/add-purchases-dialog";
 import { logOutAction } from "@/app/auth/actions";
+import { PendingOrders } from "@/app/pending/pending-orders";
 import { Questions } from "@/app/questions/questions";
 import { InventoryList } from "./inventory-list";
 
@@ -32,6 +33,9 @@ export default function DashboardPage() {
           </form>
         </div>
       </header>
+      <Suspense fallback={null}>
+        <PendingOrders />
+      </Suspense>
       <Suspense fallback={<InventorySkeleton />}>
         <InventoryList />
       </Suspense>

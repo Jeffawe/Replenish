@@ -2,6 +2,8 @@
 
 import { useRef, useState } from "react";
 import { CHOICE, FlowHeader, PRIMARY, SECONDARY, type Flow, type ProductOption } from "@/app/ingest/flow-kit";
+import { EmailFlow } from "@/app/ingest/email/email-flow";
+import { ManualFlow } from "@/app/ingest/manual/manual-flow";
 import { ReceiptFlow } from "@/app/ingest/receipt/receipt-flow";
 
 /**
@@ -10,7 +12,8 @@ import { ReceiptFlow } from "@/app/ingest/receipt/receipt-flow";
  */
 const SOURCES: { id: string; title: string; description: string; flow?: Flow }[] = [
   { id: "receipt", title: "Receipt", description: "Take a photo or upload one", flow: ReceiptFlow },
-  { id: "email", title: "Email", description: "Find orders in your inbox" },
+  { id: "manual", title: "Type it in", description: "Add items by hand", flow: ManualFlow },
+  { id: "email", title: "Email", description: "Amazon and other online orders", flow: EmailFlow },
 ];
 
 type View =

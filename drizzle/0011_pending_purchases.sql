@@ -1,0 +1,1 @@
+ALTER TABLE "purchase_events" ADD COLUMN "status" text DEFAULT 'approved' NOT NULL;

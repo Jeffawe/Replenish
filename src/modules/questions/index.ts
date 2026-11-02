@@ -14,6 +14,7 @@ import {
   snoozeQuestion as storeSnooze,
   unconfirmProduct,
 } from "@/modules/inventory/checks";
+import { listUnconfirmedProductIds } from "@/modules/inventory/pending";
 import { getInventory, recordStockCount, undoStockCount, type InventoryItem } from "@/modules/inventory/service";
 import { DEFAULT_QUESTION_CONFIG } from "./config";
 import { changeFor, selectQuestions } from "./rules";
@@ -53,8 +54,14 @@ function factsOf({ product, estimate, corrections }: InventoryItem): ProductFact
 
 /** The questions worth asking the user now, most useful first. */
 export async function getQuestions(userId: string): Promise<Question[]> {
-  const [inventory, snoozed] = await Promise.all([getInventory(userId), listSnoozed(userId, new Date())]);
-  return selectQuestions(inventory.map(factsOf), snoozed, new Date());
+  const [inventory, snoozed, waiting] = await Promise.all([
+    getInventory(userId),
+    listSnoozed(userId, new Date()),
+    listUnconfirmedProductIds(userId),
+  ]);
+  // A product an unanswered email order made is asked about through that order, not here.
+  const asked = inventory.filter((item) => !waiting.has(item.product.id));
+  return selectQuestions(asked.map(factsOf), snoozed, new Date());
 }
 
 /** Saves an answer: works out what it changes, double-checks a surprising number, and writes it. */

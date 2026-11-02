@@ -1,0 +1,7 @@
+name = "replenish-email"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+[vars]
+# Where the app answers. The Worker posts each email to <APP_URL>/api/email/inbound.
+APP_URL = "https://framework-server.taile3703c.ts.net"

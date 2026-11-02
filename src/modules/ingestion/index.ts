@@ -15,12 +15,24 @@ import {
   listProductSummaries,
   listPurchasesNear,
 } from "@/modules/inventory/ingest";
+import {
+  clearEmailLog,
+  findUserByInboxToken,
+  getOrCreateInboxToken,
+  listEmailLog,
+  logEmail,
+  readVerificationCode,
+  replaceInboxToken,
+  saveVerificationCode,
+} from "@/modules/inventory/email-inbox";
 import { refundReceiptRead, reserveReceiptRead } from "@/modules/inventory/receipt-reads";
 import type { IngestResult } from "@/core/purchase-batch";
 import { limitReachedMessage } from "@/core/receipt-limit";
 import { learnFromSave, loadDictionary, lookupProductCodes } from "@/modules/dictionary";
 import { lessonsFromReview, type Review } from "./aliases";
+import { addressFor, newToken } from "./email/address";
 import { emailExtractor } from "./email/extractor";
+import { handleInboundEmail } from "./email/inbound";
 import { syncInbox } from "./email/sync";
 import type { InboxProvider } from "./email/types";
 import { createReceiptExtractor } from "./receipt/extractor";
@@ -165,4 +177,36 @@ export function syncEmailInbox(userId: string, since: Date, inbox: InboxProvider
     extract: (message) => extractPurchases("email", message, userId),
     submit: submitBatch,
   });
+}
+
+
+/**
+ * One email posted by the Cloudflare Worker to a user's private address. Reads
+ * it into a pending order (see core/pending.ts) when it is from a store we read.
+ */
+export function receiveEmail(raw: unknown) {
+  return handleInboundEmail(raw, {
+    findUser: findUserByInboxToken,
+    extract: (userId, message) => extractPurchases("email", message, userId),
+    submit: submitBatch,
+    saveVerificationCode,
+    log: logEmail,
+  });
+}
+
+/** What the email setup page shows. `address` is null until EMAIL_DOMAIN is set on this server. */
+export async function getEmailSetup(userId: string) {
+  const domain = process.env.EMAIL_DOMAIN?.trim();
+  const [token, code, log] = await Promise.all([
+    domain ? getOrCreateInboxToken(userId, newToken) : null,
+    readVerificationCode(userId),
+    listEmailLog(userId),
+  ]);
+  return { address: domain && token ? addressFor(token, domain) : null, confirmationCode: code, log };
+}
+
+/** "Stop and delete": a new address (the old one stops working) and an empty log. */
+export async function resetEmailAddress(userId: string) {
+  await replaceInboxToken(userId, newToken);
+  await clearEmailLog(userId);
 }

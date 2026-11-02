@@ -125,6 +125,55 @@ export const ignoredWordings = pgTable(
   (t) => [uniqueIndex("ignored_wordings_user_wording_idx").on(t.userId, t.wording)],
 );
 
+// The private address a user forwards order emails to (o-<token>@EMAIL_DOMAIN). The token is
+// the whole secret: unguessable, one per user, replaced to retire the address. The Gmail
+// confirmation code is kept only briefly, so the setup page can show it.
+export const emailInboxes = pgTable("email_inboxes", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  verificationCode: text("verification_code"),
+  verificationAt: timestamp("verification_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// What happened to each forwarded email, so the user can check what we did with their mail.
+// Deliberately holds no sender, subject or text: only the outcome and why.
+export const emailLog = pgTable(
+  "email_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    // "accepted" | "dropped" | "verification"
+    outcome: text("outcome").notNull(),
+    reason: text("reason"),
+    // The store it was recognised as (from our own list), when it was.
+    retailer: text("retailer"),
+    itemCount: integer("item_count"),
+  },
+  (t) => [index("email_log_user_date_idx").on(t.userId, t.receivedAt)],
+);
+
+// An order line the user rejected, so the same order arriving again (the shipping
+// and delivery emails repeat it) isn't brought back. Same key as purchase_events.
+export const rejectedLines = pgTable(
+  "rejected_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    lineIndex: integer("line_index").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("rejected_lines_idx").on(t.userId, t.idempotencyKey, t.lineIndex)],
+);
+
 // Append-only ledger. Every ingestion source (receipt, email, manual, ...)
 // ends up as a row here; inventory/prediction only ever reads this table.
 export const purchaseEvents = pgTable(
@@ -157,6 +206,13 @@ export const purchaseEvents = pgTable(
     // the same key + line can only be stored once. Null for rows that predate it.
     idempotencyKey: text("idempotency_key"),
     lineIndex: integer("line_index"),
+    // "pending" = stored by an automatic source (email) and waiting for the user to approve it.
+    // Pending purchases count in estimates like any other; rejecting one deletes it.
+    status: text("status").notNull().default("approved"),
+    // When a pending purchase stops asking and counts as approved (an order for a product the
+    // user already had). Null on a pending purchase means no limit: it made a new product and
+    // waits for an answer. See core/pending.ts.
+    pendingUntil: timestamp("pending_until", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

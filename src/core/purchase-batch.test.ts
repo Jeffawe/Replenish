@@ -76,3 +76,30 @@ describe("PurchaseBatchSchema", () => {
     expect(parse({ items: [{ ...line, productId: "not-a-uuid" }] }).success).toBe(false);
   });
 });
+
+describe("PurchaseBatchSchema: pending orders", () => {
+  const inDays = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  it("defaults to approved", () => {
+    expect(parse({}).data?.status).toBe("approved");
+  });
+
+  it("still rejects an approved purchase dated ahead", () => {
+    const result = parse({ purchasedAt: inDays(3) });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]).toMatchObject({ path: ["purchasedAt"], message: "Purchase date is in the future" });
+  });
+
+  it("lets a pending order carry its expected arrival date", () => {
+    expect(parse({ status: "pending", purchasedAt: inDays(3) }).success).toBe(true);
+  });
+
+  it("limits how far ahead a pending order may be", () => {
+    expect(parse({ status: "pending", purchasedAt: inDays(30) }).success).toBe(true);
+    expect(parse({ status: "pending", purchasedAt: inDays(90) }).success).toBe(false);
+  });
+
+  it("rejects an unknown status", () => {
+    expect(parse({ status: "maybe" }).success).toBe(false);
+  });
+});

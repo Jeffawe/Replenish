@@ -7,7 +7,8 @@ import type {
   PurchaseSummary,
 } from "@/core/purchase-batch";
 import { db } from "@/db/client";
-import { products, purchaseEvents, type Product } from "@/db/schema";
+import { products, purchaseEvents, rejectedLines, type Product } from "@/db/schema";
+import { pendingUntilFor } from "@/core/pending";
 import { listProducts } from "./repo";
 import { normalizeProductName } from "@/core/product-name";
 import { normalizeBrands } from "./types";
@@ -15,7 +16,7 @@ import { normalizeBrands } from "./types";
 type Line = PurchaseBatch["items"][number];
 
 // "roll" and "rolls", "Gallon" and "gallons" are the same unit.
-const unitKey = (unit: string) => unit.trim().toLowerCase().replace(/s$/, "");
+export const unitKey = (unit: string) => unit.trim().toLowerCase().replace(/s$/, "");
 
 /**
  * The receiver. Every sender's data ends up here, so it stays deliberately
@@ -42,7 +43,16 @@ export async function ingestPurchaseBatch(
   const rejected = new Map<number, string>();
   const accepted: { index: number; line: Line; product: Product; productCreated: boolean }[] = [];
 
+  // Which line of the source each is, for the idempotency check (see PurchaseLineSchema.line).
+  const lineNumber = (index: number) => batch.items[index]!.line ?? index;
+  // Lines the user rejected earlier stay rejected when the same order arrives again.
+  const declined = await declinedLines(userId, batch.idempotencyKey);
+
   for (const [index, line] of batch.items.entries()) {
+    if (declined.has(lineNumber(index))) {
+      rejected.set(index, "You rejected this order earlier");
+      continue;
+    }
     const resolved = await resolveProduct(userId, line, byId, byName, register);
     if ("reason" in resolved) {
       rejected.set(index, resolved.reason);
@@ -58,9 +68,8 @@ export async function ingestPurchaseBatch(
 
   // The unique (user, idempotencyKey, line) index decides: a line that was
   // already stored comes back empty here instead of being stored twice.
-  // Which line of the source each is, for the idempotency check (see PurchaseLineSchema.line).
-  const lineNumber = (index: number) => batch.items[index]!.line ?? index;
-  const inserts = accepted.map(({ index, line, product }) =>
+  const now = new Date();
+  const inserts = accepted.map(({ index, line, product, productCreated }) =>
     db
       .insert(purchaseEvents)
       .values({
@@ -78,6 +87,8 @@ export async function ingestPurchaseBatch(
         orderId: batch.orderId ?? null,
         idempotencyKey: batch.idempotencyKey,
         lineIndex: lineNumber(index),
+        status: batch.status,
+        pendingUntil: batch.status === "pending" ? pendingUntilFor(productCreated, now) : null,
       })
       .onConflictDoNothing({
         target: [purchaseEvents.userId, purchaseEvents.idempotencyKey, purchaseEvents.lineIndex],
@@ -142,6 +153,14 @@ export async function ingestPurchaseBatch(
 }
 
 /** Buying a product the user had hidden ("don't track this") brings it back, rather than hiding the purchase too. */
+async function declinedLines(userId: string, idempotencyKey: string): Promise<Set<number>> {
+  const rows = await db
+    .select({ lineIndex: rejectedLines.lineIndex })
+    .from(rejectedLines)
+    .where(and(eq(rejectedLines.userId, userId), eq(rejectedLines.idempotencyKey, idempotencyKey)));
+  return new Set(rows.map((row) => row.lineIndex));
+}
+
 async function restoreArchived(bought: Product[]) {
   const ids = [...new Set(bought.filter((product) => product.archivedAt !== null).map((product) => product.id))];
   if (ids.length > 0) await db.update(products).set({ archivedAt: null }).where(inArray(products.id, ids));

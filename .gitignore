@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
-/node_modules
+# dependencies (in any folder, e.g. cloudflare/email-worker)
+node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -42,3 +42,7 @@ next-env.d.ts
 
 # saved OCR text of real receipts (scripts/try-receipt.ts)
 /.cache/
+
+# Cloudflare Wrangler
+.wrangler/
+.dev.vars*
