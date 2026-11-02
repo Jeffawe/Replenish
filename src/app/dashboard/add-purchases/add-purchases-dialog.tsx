@@ -13,7 +13,7 @@ import { ReceiptFlow } from "@/app/ingest/receipt/receipt-flow";
 const SOURCES: { id: string; title: string; description: string; flow?: Flow }[] = [
   { id: "receipt", title: "Receipt", description: "Take a photo or upload one", flow: ReceiptFlow },
   { id: "manual", title: "Type it in", description: "Add items by hand", flow: ManualFlow },
-  { id: "email", title: "Email", description: "Amazon and other online orders", flow: EmailFlow },
+  { id: "email", title: "Email", description: "Orders from online stores", flow: EmailFlow },
 ];
 
 type View =

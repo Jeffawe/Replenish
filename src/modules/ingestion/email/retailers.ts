@@ -1,9 +1,27 @@
+/** A store whose order emails we read. */
+export interface Retailer {
+  name: string;
+  /** Where its order emails come from (and their subdomains). */
+  domains: string[];
+  /** What goes in Gmail's "From" box to find this store's order emails. */
+  from: string;
+}
+
 /**
  * The stores whose order emails we read. Mail from anyone else is dropped the
  * moment it arrives, so a forwarding filter that is too wide can't pull in
- * their other mail. Add a store here only together with a way to read its emails.
+ * their other mail. To add a store, add it here and say how to read its emails
+ * (see reader.ts); the setup page lists whatever is here.
  */
-const RETAILERS: { name: string; domains: string[] }[] = [{ name: "Amazon", domains: ["amazon.com"] }];
+const RETAILERS: Retailer[] = [
+  { name: "Amazon", domains: ["amazon.com"], from: "auto-confirm@amazon.com" },
+  { name: "Walmart", domains: ["walmart.com"], from: "help@walmart.com" },
+];
+
+/** The stores the setup page offers, with the address to put in Gmail's filter. */
+export function supportedStores(): { name: string; from: string }[] {
+  return RETAILERS.map(({ name, from }) => ({ name, from }));
+}
 
 /** The domain of an address like `Name <a@b.com>` or `a@b.com`, lowercased, or null. */
 function domainOf(address: string): string | null {

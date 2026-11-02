@@ -7,9 +7,6 @@ import { CheckAgain, CopyField, StopAndDelete } from "./email-controls";
 
 export const metadata: Metadata = { title: "Orders by email · Replenish" };
 
-// The only store we read so far, and the one Gmail filter that finds its order emails.
-const FILTER = "from:auto-confirm@amazon.com";
-
 const MUTED = "text-sm text-zinc-600 dark:text-zinc-400";
 const H2 = "text-base font-semibold";
 
@@ -35,7 +32,7 @@ export default function EmailOrdersPage() {
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight">Orders by email</h1>
         <p className={MUTED}>
-          Online stores like Amazon don&rsquo;t give you a receipt to photograph. Instead, have your email forward their order confirmations to a
+          Online stores don&rsquo;t give you a receipt to photograph. Instead, have your email forward their order confirmations to a
           private address, and we&rsquo;ll add what you bought.
         </p>
       </header>
@@ -51,6 +48,8 @@ export default function EmailOrdersPage() {
 async function EmailSetup() {
   const user = await requireUser();
   const setup = await getEmailSetup(user.id);
+  const storeNames = setup.stores.map((store) => store.name);
+  const supported = storeNames.length > 1 ? `${storeNames.slice(0, -1).join(", ")} and ${storeNames.at(-1)}` : (storeNames[0] ?? "no stores");
 
   if (!setup.address) {
     return (
@@ -73,10 +72,21 @@ async function EmailSetup() {
         <ol className={MUTED + " flex list-decimal flex-col gap-2 pl-5"}>
           <li>In Gmail, open Settings &rarr; See all settings &rarr; Forwarding and POP/IMAP &rarr; Add a forwarding address, and paste the address above.</li>
           <li>Gmail sends it a confirmation code. It appears just below. Enter it in Gmail.</li>
-          <li>Settings &rarr; Filters and Blocked Addresses &rarr; Create a new filter. Paste this in the &ldquo;From&rdquo; box:</li>
+          <li>
+            Settings &rarr; Filters and Blocked Addresses &rarr; Create a new filter. In the &ldquo;From&rdquo; box, paste the store&rsquo;s address from
+            the list below.
+          </li>
+          <li>Choose &ldquo;Forward it to&rdquo; your private address and create the filter. Repeat for each store you shop at.</li>
         </ol>
-        <CopyField value={FILTER} label="Gmail filter" />
-        <p className={MUTED}>Then choose &ldquo;Forward it to&rdquo; your private address and create the filter.</p>
+        <p className={MUTED}>For now we can read orders from {supported}. Email from any other store is dropped without being read.</p>
+        <ul className="flex flex-col gap-3">
+          {setup.stores.map((store) => (
+            <li key={store.name} className="flex flex-col gap-1">
+              <span className="text-sm font-medium">{store.name}</span>
+              <CopyField value={store.from} label={`${store.name} Gmail filter`} />
+            </li>
+          ))}
+        </ul>
 
         <div className="flex flex-wrap items-center gap-3 rounded-xl bg-zinc-100 px-4 py-3 text-sm dark:bg-zinc-800">
           {setup.confirmationCode ? (
@@ -100,7 +110,7 @@ async function EmailSetup() {
             filter is yours: you can see it, change it or switch it off in Gmail any time.
           </li>
           <li>
-            <strong className="text-foreground">Only store emails are read.</strong> Anything that isn&rsquo;t from Amazon is dropped as soon as it
+            <strong className="text-foreground">Only order emails from stores are read.</strong> Anything from a sender we don&rsquo;t recognise as a store is dropped as soon as it
             arrives and isn&rsquo;t read.
           </li>
           <li>

@@ -57,7 +57,7 @@ The same file defines what comes back: `LineResult` (`created`, `duplicate` or `
 Producers today:
 
 - [receipt/extractor.ts](../src/modules/ingestion/receipt/extractor.ts): input is an image `File`. **Built**, see [Receipts](#receipts).
-- [email/extractor.ts](../src/modules/ingestion/email/extractor.ts): input is an `EmailMessage`. **Stub:** always returns `skipped` until the extraction approach is decided.
+- [email/extractor.ts](../src/modules/ingestion/email/extractor.ts): input is an `EmailMessage`. **Built, no readers yet:** it ties a reader's order to the user's products and builds the batch; every email is `skipped` until a reader exists, see [Email forwarding](#email-forwarding-built-waiting-for-a-reader).
 
 A draft can carry two optional extras for the review screen: `lines` (how the input worded each line, and how it was matched to a product) and `sourceText` (the raw text the producer read). If a producer can't do its job because something it depends on is down or not set up, it throws an `ExtractionError` whose message is safe to show the user. [registry.ts](../src/modules/ingestion/registry.ts) maps `source` to its producer; [index.ts](../src/modules/ingestion/index.ts) builds the registry.
 
@@ -139,7 +139,9 @@ Decided with the user: no mailbox access. Each user gets a private address `o-<t
 - **Privacy, as promised to the user** (the setup page says the same, keep them in step): we see only what is forwarded; non-store mail is dropped unread; the email's text, sender and subject are never stored; `email_log` holds only the outcome and a reason; the email passes through Cloudflare and our server in memory. If the producer ever sends text to a third party (an LLM), the setup page's wording must change first.
 - **Setup page** `/email-orders`: the address, the Gmail steps and filter, the confirmation code, the log, and "Stop and delete" (a new token; the old address stops working).
 - **Env:** `EMAIL_DOMAIN` (the address's domain; unset hides the feature), `EMAIL_WORKER_SECRET` (also set on the Worker).
-- **Not done:** the producer. [email/extractor.ts](../src/modules/ingestion/email/extractor.ts) still skips every email, so a real store email is logged as "skipped" until it can read one. It must send only confident product matches as `productId`, use the expected delivery date as `purchasedAt`, and key the batch on the store's order number.
+- **Stores:** [retailers.ts](../src/modules/ingestion/email/retailers.ts) lists the stores we read (Amazon and Walmart for now): name, sender domains, and the `from` address the setup page shows for the user's Gmail filter. The page lists whatever is there, so adding a store is one line, plus a reader. The sender addresses are from memory; check them against a real order email.
+- **Readers (the open part):** [reader.ts](../src/modules/ingestion/email/reader.ts) defines `OrderReader` (`read(message, store)` returns a `ReadOrder`: the store's order number, expected arrival, lines; or null when it isn't an order). `readOrder` tries the store's own reader (`STORE_READERS`, empty) then `ANY_STORE_READER` (empty: the place for a language model). The extractor does the rest: only a line that names one of the user's products exactly gets a `productId`, `purchasedAt` is the expected arrival (else the email's date), and the key is `email-<store>-<order number>`. **Nothing reads emails yet**, so a real store email is logged as "skipped: We can't read <store> order emails yet".
+- **Connecting a model:** write an `OrderReader` and set it as `ANY_STORE_READER`. That sends the email's text to a third party, so first change the privacy wording above and on the setup page. Drop non-orders (shipping, ads) before the model sees them where possible.
 
 Today the inbox is [a simulated, in-memory one](../src/modules/ingestion/email/inbox/simulated.ts) and it is empty. Re-reading mail is safe because the idempotency key makes a repeat a `duplicate`.
 

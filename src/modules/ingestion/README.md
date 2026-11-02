@@ -34,7 +34,7 @@ Inventory never imports this folder.
 | [`aliases.ts`](aliases.ts) | What to remember after a reviewed batch is saved (wordings, left-out lines) |
 | [`draft-schema.ts`](draft-schema.ts) | Checks a draft the browser sends back (to add a second photo to it) |
 | [`receipt/`](receipt/) | The receipt producer: OCR, rows, parse, dictionary, matching, draft, test samples |
-| [`email/`](email/) | The email producer (not built yet), the forwarding intake (`inbound.ts`, `address.ts`, `retailers.ts`) and the old inbox sync (simulated inbox only) |
+| [`email/`](email/) | The email producer (`extractor.ts`; it needs a reader from `reader.ts`, none written yet), the forwarding intake (`inbound.ts`, `address.ts`, `retailers.ts`: the supported stores) and the old inbox sync (simulated inbox only) |
 
 Inside `receipt/`, in the order a photo goes through them: `ocr/` (Google Vision), `layout.ts`, `parse.ts`, the dictionary (a separate module), `match.ts`, `extractor.ts`. `merge.ts` adds a second photo's draft to the first, and `totals.ts` holds the receipt key and the adding-up check they share. `samples.ts` and `sample-review.ts` are the local test-sample store and its comparison.
 

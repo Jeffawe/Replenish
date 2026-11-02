@@ -31,12 +31,20 @@ export interface InboundDeps {
   log(userId: string, entry: { outcome: "accepted" | "dropped" | "verification"; reason?: string; retailer?: string | null; itemCount?: number }): Promise<void>;
 }
 
-/** Gmail asks the new forwarding address to confirm: its code, if this is that email. */
+/**
+ * Gmail asks the new forwarding address to confirm: its code, if this is that email.
+ * It has to come from Google and be about forwarding. The code is in the subject ("(#123456789)")
+ * or the body ("Confirmation code: 123456789"); failing both, the one long number in the body.
+ */
 export function verificationCode(from: string, subject: string, text: string): string | null {
-  if (!/forwarding-noreply@google\.com/i.test(from)) return null;
+  const domain = /@([a-z0-9.-]+)>?\s*$/i.exec(from.trim())?.[1]?.toLowerCase() ?? "";
+  const fromGoogle = ["google.com", "googlemail.com"].some((d) => domain === d || domain.endsWith(`.${d}`));
+  const aboutForwarding = /forwarding confirmation|forward(?:ing)? mail|confirm.*forward/i.test(subject + " " + text.slice(0, 600));
+  if (!fromGoogle || !aboutForwarding) return null;
   const inSubject = /\(#(\d{6,12})\)/.exec(subject);
   const inBody = /code[^\d]{0,40}(\d{6,12})/i.exec(text);
-  return inSubject?.[1] ?? inBody?.[1] ?? null;
+  const anyNumber = /(?<!\d)(\d{6,12})(?!\d)/.exec(text.slice(0, 2000));
+  return inSubject?.[1] ?? inBody?.[1] ?? anyNumber?.[1] ?? null;
 }
 
 /** Why a submission that stored nothing stored nothing, in words the user can read. */

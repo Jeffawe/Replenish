@@ -33,6 +33,7 @@ import { lessonsFromReview, type Review } from "./aliases";
 import { addressFor, newToken } from "./email/address";
 import { emailExtractor } from "./email/extractor";
 import { handleInboundEmail } from "./email/inbound";
+import { supportedStores } from "./email/retailers";
 import { syncInbox } from "./email/sync";
 import type { InboxProvider } from "./email/types";
 import { createReceiptExtractor } from "./receipt/extractor";
@@ -202,7 +203,7 @@ export async function getEmailSetup(userId: string) {
     readVerificationCode(userId),
     listEmailLog(userId),
   ]);
-  return { address: domain && token ? addressFor(token, domain) : null, confirmationCode: code, log };
+  return { address: domain && token ? addressFor(token, domain) : null, confirmationCode: code, log, stores: supportedStores() };
 }
 
 /** "Stop and delete": a new address (the old one stops working) and an empty log. */

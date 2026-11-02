@@ -125,6 +125,11 @@ describe("verificationCode", () => {
     const from = "forwarding-noreply@google.com";
     expect(verificationCode(from, "(#987654321) Gmail Forwarding Confirmation", "")).toBe("987654321");
     expect(verificationCode(from, "Gmail Forwarding Confirmation", "Confirmation code: 55443322")).toBe("55443322");
+    // Google's other sender addresses, and a code worded differently.
+    expect(verificationCode("Gmail Team <mail-noreply@google.com>", "Gmail Forwarding Confirmation - Receive Mail from a@gmail.com", "a@gmail.com has requested to forward mail to you. Your code is 123456789.")).toBe("123456789");
+    // Not Google, or not about forwarding: never a code.
+    expect(verificationCode("a@google.com.evil.io", "Gmail Forwarding Confirmation", "Confirmation code: 55443322")).toBeNull();
+    expect(verificationCode("no-reply@accounts.google.com", "Security alert", "Your device id is 12345678")).toBeNull();
   });
 });
 
@@ -149,6 +154,9 @@ describe("retailers", () => {
     expect(retailerOf("shipment@mail.amazon.com")).toBe("Amazon");
     expect(retailerOf("a@amazon.com.evil.io")).toBeNull();
     expect(retailerOf("a@notamazon.com")).toBeNull();
+    expect(retailerOf("Walmart <help@walmart.com>")).toBe("Walmart");
+    expect(retailerOf("a@walmart.com.evil.io")).toBeNull();
+    expect(retailerOf("a@notwalmart.com")).toBeNull();
   });
   it("leaves a direct sender alone", () => {
     expect(originalSender("auto-confirm@amazon.com", "")).toBe("auto-confirm@amazon.com");

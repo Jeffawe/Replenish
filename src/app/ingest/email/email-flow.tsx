@@ -11,7 +11,7 @@ import { FlowHeader, SECONDARY, type FlowProps } from "../flow-kit";
 export function EmailFlow({ onBack, onClose }: FlowProps) {
   return (
     <>
-      <FlowHeader title="Orders by email" subtitle="For Amazon and other stores that don't give a receipt." onClose={onClose} />
+      <FlowHeader title="Orders by email" subtitle="For online stores that don't give a receipt." onClose={onClose} />
       <div className="flex flex-col gap-4 px-5 py-5 text-sm">
         <p>
           Forward your order emails to a private address and we&rsquo;ll add what you bought, with nothing to type. You set it up once. After that,
