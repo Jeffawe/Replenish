@@ -43,17 +43,26 @@ export async function findUserByInboxToken(token: string): Promise<string | null
   return row?.userId ?? null;
 }
 
-export async function saveVerificationCode(userId: string, code: string): Promise<void> {
-  await db.update(emailInboxes).set({ verificationCode: code, verificationAt: new Date() }).where(eq(emailInboxes.userId, userId));
+export async function saveVerificationCode(userId: string, code: string | null, link: string | null = null): Promise<void> {
+  await db
+    .update(emailInboxes)
+    .set({ verificationCode: code, verificationLink: link, verificationAt: new Date() })
+    .where(eq(emailInboxes.userId, userId));
+}
+
+/** The latest Gmail confirmation (code and/or link), while it's still fresh. */
+export async function readVerification(userId: string, now = new Date()): Promise<{ code: string | null; link: string | null } | null> {
+  const [row] = await db
+    .select({ code: emailInboxes.verificationCode, link: emailInboxes.verificationLink, at: emailInboxes.verificationAt })
+    .from(emailInboxes)
+    .where(eq(emailInboxes.userId, userId));
+  if (!row?.at || now.getTime() - row.at.getTime() >= CODE_LIFETIME_MS) return null;
+  return row.code || row.link ? { code: row.code, link: row.link } : null;
 }
 
 /** The latest Gmail confirmation code, while it's still fresh. */
 export async function readVerificationCode(userId: string, now = new Date()): Promise<string | null> {
-  const [row] = await db
-    .select({ code: emailInboxes.verificationCode, at: emailInboxes.verificationAt })
-    .from(emailInboxes)
-    .where(eq(emailInboxes.userId, userId));
-  return row?.code && row.at && now.getTime() - row.at.getTime() < CODE_LIFETIME_MS ? row.code : null;
+  return (await readVerification(userId, now))?.code ?? null;
 }
 
 export async function logEmail(

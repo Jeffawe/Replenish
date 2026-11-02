@@ -10,6 +10,7 @@ import {
   getOrCreateInboxToken,
   listEmailLog,
   logEmail,
+  readVerification,
   readVerificationCode,
   replaceInboxToken,
   saveVerificationCode,
@@ -52,6 +53,11 @@ describe("email inbox", () => {
     await saveVerificationCode(userId, "424242424");
     expect(await readVerificationCode(userId)).toBe("424242424");
     expect(await readVerificationCode(userId, new Date(Date.now() + 31 * 60 * 1000))).toBeNull();
+
+    // The confirm link is kept with the code, and goes with it.
+    await saveVerificationCode(userId, null, "https://mail-settings.google.com/mail/vf-abc");
+    expect(await readVerification(userId)).toEqual({ code: null, link: "https://mail-settings.google.com/mail/vf-abc" });
+    expect(await readVerification(userId, new Date(Date.now() + 31 * 60 * 1000))).toBeNull();
   });
 
   it("logs outcomes newest first, keeps nothing else, and clears", async () => {

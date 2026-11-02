@@ -21,7 +21,7 @@ import {
   getOrCreateInboxToken,
   listEmailLog,
   logEmail,
-  readVerificationCode,
+  readVerification,
   replaceInboxToken,
   saveVerificationCode,
 } from "@/modules/inventory/email-inbox";
@@ -200,10 +200,10 @@ export async function getEmailSetup(userId: string) {
   const domain = process.env.EMAIL_DOMAIN?.trim();
   const [token, code, log] = await Promise.all([
     domain ? getOrCreateInboxToken(userId, newToken) : null,
-    readVerificationCode(userId),
+    readVerification(userId),
     listEmailLog(userId),
   ]);
-  return { address: domain && token ? addressFor(token, domain) : null, confirmationCode: code, log, stores: supportedStores() };
+  return { address: domain && token ? addressFor(token, domain) : null, confirmationCode: code?.code ?? null, confirmationLink: code?.link ?? null, log, stores: supportedStores() };
 }
 
 /** "Stop and delete": a new address (the old one stops working) and an empty log. */

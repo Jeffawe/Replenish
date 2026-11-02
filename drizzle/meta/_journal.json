@@ -99,6 +99,13 @@
       "when": 1793393871153,
       "tag": "0013_email_forwarding",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793593097788,
+      "tag": "0014_email_verification_link",
+      "breakpoints": true
     }
   ]
 }

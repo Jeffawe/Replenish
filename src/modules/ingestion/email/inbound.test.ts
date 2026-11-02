@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, type Mock } from "vitest";
 import type { IngestResult } from "@/core/purchase-batch";
-import { handleInboundEmail, verificationCode, type InboundDeps } from "./inbound";
+import { gmailConfirmation, handleInboundEmail, verificationCode, type InboundDeps } from "./inbound";
 import { addressFor, newToken, tokenFromAddress } from "./address";
 import { originalSender, retailerOf } from "./retailers";
 
@@ -77,7 +77,7 @@ describe("handleInboundEmail", () => {
       d,
     );
     expect(outcome).toEqual({ outcome: "verification" });
-    expect(d.saveVerificationCode).toHaveBeenCalledWith("user-1", "123456789");
+    expect(d.saveVerificationCode).toHaveBeenCalledWith("user-1", "123456789", null);
     expect(d.submit).not.toHaveBeenCalled();
   });
 
@@ -160,5 +160,28 @@ describe("retailers", () => {
   });
   it("leaves a direct sender alone", () => {
     expect(originalSender("auto-confirm@amazon.com", "")).toBe("auto-confirm@amazon.com");
+  });
+});
+
+describe("gmailConfirmation", () => {
+  const from = "Gmail Team <forwarding-noreply@google.com>";
+  const link = "https://mail-settings.google.com/mail/vf-%5BANGjdJ8x%5D-abc123";
+
+  it("finds the confirm link as well as the code", () => {
+    const text = `a@gmail.com has requested to forward mail to you.\nConfirmation code: 123456789\nTo allow it, click the link below:\n${link}\nThanks`;
+    expect(gmailConfirmation(from, "Gmail Forwarding Confirmation", text)).toEqual({ code: "123456789", link });
+  });
+
+  it("keeps a link when no code can be found", () => {
+    expect(gmailConfirmation(from, "Gmail Forwarding Confirmation", `Please confirm forwarding: ${link}.`)).toEqual({ code: null, link });
+  });
+
+  it("never offers a link that isn't Google's settings address", () => {
+    const text = "Confirmation code: 123456789\nhttps://mail-settings.google.com.evil.io/mail/vf-abc\nhttp://mail-settings.google.com/mail/vf-abc\nhttps://evil.io/mail/vf-abc";
+    expect(gmailConfirmation(from, "Gmail Forwarding Confirmation", text)).toEqual({ code: "123456789", link: null });
+  });
+
+  it("is not a confirmation when the sender isn't Google", () => {
+    expect(gmailConfirmation("a@evil.io", "Gmail Forwarding Confirmation", `Confirmation code: 123456789 ${link}`)).toBeNull();
   });
 });

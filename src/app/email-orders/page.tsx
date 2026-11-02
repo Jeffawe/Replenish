@@ -71,7 +71,7 @@ async function EmailSetup() {
         <h2 className={H2}>2. Tell Gmail to forward</h2>
         <ol className={MUTED + " flex list-decimal flex-col gap-2 pl-5"}>
           <li>In Gmail, open Settings &rarr; See all settings &rarr; Forwarding and POP/IMAP &rarr; Add a forwarding address, and paste the address above.</li>
-          <li>Gmail sends it a confirmation code. It appears just below. Enter it in Gmail.</li>
+          <li>Gmail sends it a confirmation email. We can&rsquo;t show you that email, but the link and code from it appear just below. Click the link to confirm.</li>
           <li>
             Settings &rarr; Filters and Blocked Addresses &rarr; Create a new filter. In the &ldquo;From&rdquo; box, paste the store&rsquo;s address from
             the list below.
@@ -89,13 +89,29 @@ async function EmailSetup() {
         </ul>
 
         <div className="flex flex-wrap items-center gap-3 rounded-xl bg-zinc-100 px-4 py-3 text-sm dark:bg-zinc-800">
-          {setup.confirmationCode ? (
-            <span>
-              Gmail&rsquo;s confirmation code: <span className="font-mono text-base font-semibold">{setup.confirmationCode}</span>
-            </span>
+          {setup.confirmationLink || setup.confirmationCode ? (
+            <>
+              {setup.confirmationLink && (
+                <a
+                  href={setup.confirmationLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background hover:opacity-90"
+                >
+                  Confirm in Gmail
+                </a>
+              )}
+              {setup.confirmationCode && (
+                <span>
+                  {setup.confirmationLink ? "Or, if Gmail asks for a code: " : "Gmail\u2019s confirmation code: "}
+                  <span className="font-mono text-base font-semibold">{setup.confirmationCode}</span>
+                </span>
+              )}
+              <p className="basis-full text-zinc-600 dark:text-zinc-400">Use the Gmail account you&rsquo;re forwarding from. This only lasts a few minutes.</p>
+            </>
           ) : (
             <>
-              <span>Waiting for Gmail&rsquo;s confirmation code&hellip;</span>
+              <span>Waiting for Gmail&rsquo;s confirmation email&hellip;</span>
               <CheckAgain />
             </>
           )}

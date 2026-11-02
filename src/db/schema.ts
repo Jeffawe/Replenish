@@ -134,6 +134,8 @@ export const emailInboxes = pgTable("email_inboxes", {
     .references(() => users.id, { onDelete: "cascade" }),
   token: text("token").notNull().unique(),
   verificationCode: text("verification_code"),
+  // Gmail's "confirm" link from the same email (a Google address), so the user can click it instead of typing the code.
+  verificationLink: text("verification_link"),
   verificationAt: timestamp("verification_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

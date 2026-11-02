@@ -27,16 +27,30 @@ export interface InboundDeps {
   findUser(token: string): Promise<string | null>;
   extract(userId: string, message: EmailMessage): Promise<RunOutcome>;
   submit(userId: string, batch: unknown): Promise<SubmitOutcome>;
-  saveVerificationCode(userId: string, code: string): Promise<void>;
+  saveVerificationCode(userId: string, code: string | null, link: string | null): Promise<void>;
   log(userId: string, entry: { outcome: "accepted" | "dropped" | "verification"; reason?: string; retailer?: string | null; itemCount?: number }): Promise<void>;
 }
 
+/** Gmail's "confirm" link, only if it is really a Google settings address (nothing else is ever shown as a link). */
+function googleConfirmLink(text: string): string | null {
+  for (const match of text.matchAll(/https:\/\/[^\s<>"')\]]+/gi)) {
+    try {
+      const url = new URL(match[0].replace(/[.,;]+$/, ""));
+      if (url.protocol === "https:" && url.hostname === "mail-settings.google.com" && url.pathname.includes("/vf-") && url.href.length <= 1000) return url.href;
+    } catch {
+      // Not a link; keep looking.
+    }
+  }
+  return null;
+}
+
 /**
- * Gmail asks the new forwarding address to confirm: its code, if this is that email.
- * It has to come from Google and be about forwarding. The code is in the subject ("(#123456789)")
- * or the body ("Confirmation code: 123456789"); failing both, the one long number in the body.
+ * Gmail asks the new forwarding address to confirm. If this is that email, its code and
+ * confirm link (either may be missing). It has to come from Google and be about forwarding.
+ * The code is in the subject ("(#123456789)") or the body ("Confirmation code: 123456789");
+ * failing both, the one long number in the body.
  */
-export function verificationCode(from: string, subject: string, text: string): string | null {
+export function gmailConfirmation(from: string, subject: string, text: string): { code: string | null; link: string | null } | null {
   const domain = /@([a-z0-9.-]+)>?\s*$/i.exec(from.trim())?.[1]?.toLowerCase() ?? "";
   const fromGoogle = ["google.com", "googlemail.com"].some((d) => domain === d || domain.endsWith(`.${d}`));
   const aboutForwarding = /forwarding confirmation|forward(?:ing)? mail|confirm.*forward/i.test(subject + " " + text.slice(0, 600));
@@ -44,7 +58,14 @@ export function verificationCode(from: string, subject: string, text: string): s
   const inSubject = /\(#(\d{6,12})\)/.exec(subject);
   const inBody = /code[^\d]{0,40}(\d{6,12})/i.exec(text);
   const anyNumber = /(?<!\d)(\d{6,12})(?!\d)/.exec(text.slice(0, 2000));
-  return inSubject?.[1] ?? inBody?.[1] ?? anyNumber?.[1] ?? null;
+  const code = inSubject?.[1] ?? inBody?.[1] ?? anyNumber?.[1] ?? null;
+  const link = googleConfirmLink(text);
+  return code || link ? { code, link } : null;
+}
+
+/** The confirmation code in Gmail's email, if this is that email. */
+export function verificationCode(from: string, subject: string, text: string): string | null {
+  return gmailConfirmation(from, subject, text)?.code ?? null;
 }
 
 /** Why a submission that stored nothing stored nothing, in words the user can read. */
@@ -70,9 +91,9 @@ export async function handleInboundEmail(raw: unknown, deps: InboundDeps): Promi
   const userId = token ? await deps.findUser(token) : null;
   if (!userId) return { outcome: "unknown-address" };
 
-  const code = verificationCode(email.from, email.subject, email.text);
-  if (code) {
-    await deps.saveVerificationCode(userId, code);
+  const confirmation = gmailConfirmation(email.from, email.subject, email.text);
+  if (confirmation) {
+    await deps.saveVerificationCode(userId, confirmation.code, confirmation.link);
     await deps.log(userId, { outcome: "verification", reason: "Gmail's confirmation code" });
     return { outcome: "verification" };
   }
