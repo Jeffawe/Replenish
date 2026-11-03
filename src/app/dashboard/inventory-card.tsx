@@ -57,10 +57,13 @@ export function InventoryCard({
   now,
   categories,
   others,
+  defaultThresholdDays = DEFAULT_PREDICT_CONFIG.defaultLowStockThresholdDays,
 }: {
   item: InventoryItem;
   now: Date;
   categories: string[];
+  /** When the user's settings call a product low, for products that don't set their own. */
+  defaultThresholdDays?: number;
   /** The user's products, to merge this one into. */
   others: { id: string; name: string; unit: string }[];
 }) {
@@ -93,10 +96,15 @@ export function InventoryCard({
               typicalLeftoverAtPurchase: product.typicalLeftoverAtPurchase,
               lowStockThresholdDays: product.lowStockThresholdDays,
               matchByName: product.matchByName,
+              boughtFrom: product.boughtFrom,
+              confirmed: product.confirmedAt !== null,
+              autobuyEnabled: product.autobuyEnabled,
+              autobuyMinPriceCents: product.autobuyMinPriceCents,
+              autobuyMaxPriceCents: product.autobuyMaxPriceCents,
             }}
             others={others.filter((other) => other.id !== product.id)}
             estimatedRemaining={estimate.estimatedRemaining}
-            defaultThresholdDays={DEFAULT_PREDICT_CONFIG.defaultLowStockThresholdDays}
+            defaultThresholdDays={defaultThresholdDays}
             categories={categories}
           />
         </div>

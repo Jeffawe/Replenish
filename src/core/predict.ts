@@ -247,10 +247,7 @@ export function predict(
           latest: ratePerDay - error > 0 ? daysUntil(ratePerDay - error) : null,
         };
 
-  const judgedDays =
-    config.lowStockUsesEarliestEstimate && daysUntilRunOutRange
-      ? daysUntilRunOutRange.earliest
-      : daysUntilRunOut;
+  const judgedDays = judgedDaysUntilRunOut({ daysUntilRunOut, daysUntilRunOutRange }, config) ?? daysUntilRunOut;
 
   const confidenceFactors = buildConfidenceFactors({
     rate,
@@ -279,6 +276,20 @@ export function predict(
     confidenceFactors,
     isLow: judgedDays <= thresholdDays,
   };
+}
+
+/**
+ * The days until run-out that "low" is judged by: the central estimate, or the earliest
+ * plausible date when the config says so. Null when there is no estimate to judge.
+ */
+export function judgedDaysUntilRunOut(
+  estimate: Pick<InventoryEstimate, "daysUntilRunOut" | "daysUntilRunOutRange">,
+  config: Pick<PredictConfig, "lowStockUsesEarliestEstimate"> = DEFAULT_PREDICT_CONFIG,
+): number | null {
+  if (estimate.daysUntilRunOut === null) return null;
+  return config.lowStockUsesEarliestEstimate && estimate.daysUntilRunOutRange
+    ? estimate.daysUntilRunOutRange.earliest
+    : estimate.daysUntilRunOut;
 }
 
 /** Prefers the rate learned from history, then the user's fallback. */

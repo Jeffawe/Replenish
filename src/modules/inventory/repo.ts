@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { inventoryCorrections, products, purchaseEvents } from "@/db/schema";
 
@@ -45,5 +45,23 @@ export function listProductCorrections(userId: string, productId: string) {
     .where(
       and(eq(inventoryCorrections.userId, userId), eq(inventoryCorrections.productId, productId)),
     )
+    .orderBy(desc(inventoryCorrections.recordedAt));
+}
+
+/** Purchases of just these products (all the user's), newest first. */
+export function listPurchaseEventsFor(userId: string, productIds: string[]) {
+  return db
+    .select()
+    .from(purchaseEvents)
+    .where(and(eq(purchaseEvents.userId, userId), inArray(purchaseEvents.productId, productIds)))
+    .orderBy(desc(purchaseEvents.purchasedAt));
+}
+
+/** Stock counts of just these products (all the user's), newest first. */
+export function listCorrectionsFor(userId: string, productIds: string[]) {
+  return db
+    .select()
+    .from(inventoryCorrections)
+    .where(and(eq(inventoryCorrections.userId, userId), inArray(inventoryCorrections.productId, productIds)))
     .orderBy(desc(inventoryCorrections.recordedAt));
 }

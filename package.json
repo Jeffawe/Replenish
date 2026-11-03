@@ -18,6 +18,9 @@
     "samples": "tsx --env-file=.env.local scripts/review-samples.ts",
     "dictionary": "tsx --env-file=.env.local scripts/dictionary.ts",
     "encoder": "tsx --env-file=.env.local scripts/encoder.ts",
+    "low": "tsx --env-file=.env.local scripts/low-products.ts",
+    "restock": "tsx --env-file=.env.local scripts/restock.ts",
+    "zinc:key": "tsx scripts/zinc-sandbox-key.ts",
     "test:db": "DB_TESTS=1 vitest run"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type {
   IngestResult,
   LineResult,
@@ -8,7 +8,9 @@ import type {
 } from "@/core/purchase-batch";
 import { db } from "@/db/client";
 import { products, purchaseEvents, rejectedLines, type Product } from "@/db/schema";
+import { cleanStore } from "@/core/bought-from";
 import { pendingUntilFor } from "@/core/pending";
+import { refreshNextCheck } from "./next-check";
 import { listProducts } from "./repo";
 import { normalizeProductName } from "@/core/product-name";
 import { normalizeBrands } from "./types";
@@ -97,7 +99,10 @@ export async function ingestPurchaseBatch(
   );
   const stored = inserts.length > 0 ? await db.batch(inserts as [(typeof inserts)[0], ...typeof inserts]) : [];
   await addNewBrands(accepted);
-  await restoreArchived(accepted.filter((_, i) => stored[i]?.length).map(({ product }) => product));
+  const bought = accepted.filter((_, i) => stored[i]?.length).map(({ product }) => product);
+  await restoreArchived(bought);
+  await rememberStore(bought, batch.store, batch.purchasedAt);
+  if (bought.length > 0) await refreshNextCheck(userId, bought.map((product) => product.id));
 
   const items: LineResult[] = [];
   for (const [index, reason] of rejected) items.push({ index, result: "rejected", reason });
@@ -159,6 +164,27 @@ async function declinedLines(userId: string, idempotencyKey: string): Promise<Se
     .from(rejectedLines)
     .where(and(eq(rejectedLines.userId, userId), eq(rejectedLines.idempotencyKey, idempotencyKey)));
   return new Set(rows.map((row) => row.lineIndex));
+}
+
+/**
+ * Where a product is bought: the store of its latest purchase, unless the user typed their
+ * own. An older receipt arriving late doesn't change it, because only a purchase at least
+ * as new as the product's newest (this one is already stored) may set it.
+ */
+async function rememberStore(bought: Product[], store: string | null | undefined, purchasedAt: Date) {
+  const name = cleanStore(store);
+  const ids = [...new Set(bought.map((product) => product.id))];
+  if (name === null || ids.length === 0) return;
+  await db
+    .update(products)
+    .set({ boughtFrom: name })
+    .where(
+      and(
+        inArray(products.id, ids),
+        eq(products.boughtFromByUser, false),
+        sql`${purchasedAt.toISOString()}::timestamptz >= coalesce((select max(${purchaseEvents.purchasedAt}) from ${purchaseEvents} where ${purchaseEvents.productId} = ${products.id}), '-infinity'::timestamptz)`,
+      ),
+    );
 }
 
 async function restoreArchived(bought: Product[]) {

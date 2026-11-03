@@ -1,6 +1,7 @@
 import { and, eq, gt, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { ignoredWordings, productAliases, products, questionSnoozes } from "@/db/schema";
+import { refreshNextCheck } from "./next-check";
 
 /**
  * Storage for what the user tells the app about a product outside of a
@@ -28,6 +29,8 @@ async function wordingsOf(userId: string, productId: string): Promise<string[]> 
 /** "Yes, keep track of this": the product stops being asked about as new. */
 export async function confirmProduct(userId: string, productId: string): Promise<void> {
   await db.update(products).set({ confirmedAt: new Date(), archivedAt: null }).where(owned(userId, productId));
+  // Confirming also brings back a hidden product.
+  await refreshNextCheck(userId, [productId]);
 }
 
 /**
@@ -45,6 +48,7 @@ export async function archiveProduct(userId: string, productId: string): Promise
       .values(wordings.map((wording) => ({ userId, wording })))
       .onConflictDoNothing({ target: [ignoredWordings.userId, ignoredWordings.wording] }),
   ]);
+  await refreshNextCheck(userId, [productId]);
 }
 
 /** Takes back a "yes, keep track of this". */
@@ -60,6 +64,7 @@ export async function restoreProduct(userId: string, productId: string): Promise
     db.update(products).set({ archivedAt: null }).where(owned(userId, productId)),
     db.delete(ignoredWordings).where(and(eq(ignoredWordings.userId, userId), inArray(ignoredWordings.wording, wordings))),
   ]);
+  await refreshNextCheck(userId, [productId]);
 }
 
 /** The answers to "how long does one last?" and "how much is left when you restock?". Unset fields are left alone. */
@@ -71,6 +76,7 @@ export async function saveUsageAnswers(
 ): Promise<void> {
   if (Object.keys(answers).length === 0) return;
   await db.update(products).set(answers).where(owned(userId, productId));
+  await refreshNextCheck(userId, [productId]);
 }
 
 /** "Not now": keeps that kind of question about that product quiet until `until`. */

@@ -3,6 +3,7 @@ import { isAwaitingAnswer, isConfirmed } from "@/core/pending";
 import { db } from "@/db/client";
 import { inventoryCorrections, products, purchaseEvents, rejectedLines, type PurchaseEventRow } from "@/db/schema";
 import { unitKey } from "./ingest";
+import { refreshNextCheck } from "./next-check";
 
 /**
  * The user's answers about pending purchases (see core/pending.ts). Pending
@@ -98,6 +99,7 @@ export async function approvePending(userId: string, edits: PendingEdit[]): Prom
   const problems: string[] = [];
   const emptied: string[] = [];
   const kept: string[] = [];
+  const touched: string[] = [];
   let approved = 0;
 
   for (const edit of edits) {
@@ -131,6 +133,7 @@ export async function approvePending(userId: string, edits: PendingEdit[]): Prom
     }
 
     await db.update(purchaseEvents).set(change).where(and(eq(purchaseEvents.id, row.id), eq(purchaseEvents.userId, userId)));
+    touched.push(row.productId, change.productId ?? row.productId);
     // "Yes, this order is mine" already answers "keep tracking this new product?", so don't ask again.
     if (row.pendingUntil === null) kept.push(change.productId ?? row.productId);
     approved++;
@@ -144,6 +147,7 @@ export async function approvePending(userId: string, edits: PendingEdit[]): Prom
   }
 
   await dropEmptiedProducts(userId, emptied);
+  await refreshNextCheck(userId, touched);
   return { approved, problems };
 }
 
@@ -166,6 +170,7 @@ export async function rejectPending(userId: string, ids: string[]): Promise<{ re
     .delete(purchaseEvents)
     .where(and(eq(purchaseEvents.userId, userId), inArray(purchaseEvents.id, rows.map((row) => row.id))));
   await dropEmptiedProducts(userId, rows.filter((row) => row.pendingUntil === null).map((row) => row.productId));
+  await refreshNextCheck(userId, rows.map((row) => row.productId));
   return { rejected: rows.length };
 }
 

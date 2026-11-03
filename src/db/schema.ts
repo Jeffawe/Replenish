@@ -3,6 +3,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -85,10 +86,43 @@ export const products = pgTable(
     // rename a product to something only they use ("Mom's coffee") and turn
     // this off; wordings it was matched by before still count (product_aliases).
     matchByName: boolean("match_by_name").notNull().default(true),
+    // Buy this automatically when it runs low (and meets the user's limits). Off until the user
+    // turns it on, and only for a confirmed product. Off still means we find it and ask.
+    autobuyEnabled: boolean("autobuy_enabled").notNull().default(false),
+    // This product's own price range (cents), replacing the user's when either is set.
+    autobuyMinPriceCents: integer("autobuy_min_price_cents"),
+    autobuyMaxPriceCents: integer("autobuy_max_price_cents"),
+    // Where it is usually bought. Filled from the store on receipts and orders (the latest one)
+    // until the user types their own, which receipts then leave alone.
+    boughtFrom: text("bought_from"),
+    boughtFromByUser: boolean("bought_from_by_user").notNull().default(false),
+    // When this product is next worth checking for running low (src/core/next-check.ts), so the
+    // scheduled check only looks at products that are due. Kept up to date by refreshNextCheck
+    // whenever a purchase, count, answer or setting changes; null = nothing to wait for.
+    nextCheckAt: timestamp("next_check_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("products_user_name_idx").on(t.userId, t.normalizedName)],
+  (t) => [
+    uniqueIndex("products_user_name_idx").on(t.userId, t.normalizedName),
+    index("products_next_check_idx").on(t.nextCheckAt),
+  ],
 );
+
+// One row per user who has changed a setting (a missing row means all defaults). The rules
+// and defaults are in src/core/user-settings.ts; the module is src/modules/settings.
+export const userSettings = pgTable("user_settings", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  autobuyMinConfidence: doublePrecision("autobuy_min_confidence").notNull().default(0.8),
+  autobuyMinPriceCents: integer("autobuy_min_price_cents"),
+  autobuyMaxPriceCents: integer("autobuy_max_price_cents"),
+  autobuyMonthlyCapCents: integer("autobuy_monthly_cap_cents"),
+  autobuyLeadDays: integer("autobuy_lead_days").notNull().default(3),
+  // Null = the default in src/core/predict.ts.
+  lowStockThresholdDays: integer("low_stock_threshold_days"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // A wording a receipt or email used for a product ("gv whl mlk gl" for Whole
 // Milk), learned when the user confirms a match, so the next one needs no help.
@@ -363,6 +397,29 @@ export const codeLookups = pgTable(
   (t) => [uniqueIndex("code_lookups_code_idx").on(t.code)],
 );
 
+// What the restock check found for a low product, kept so the user can be asked about it the next
+// time they log in (src/modules/restock). One row per product: `found` is the search's result
+// (the best listing and up to two others), read back through a schema because it comes from outside.
+// "open" = show it; "dismissed" = the user said not now, until the product has stock again.
+export const restockSuggestions = pgTable(
+  "restock_suggestions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("open"),
+    found: jsonb("found").notNull(),
+    searchedAt: timestamp("searched_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("restock_suggestions_product_idx").on(t.productId), index("restock_suggestions_user_idx").on(t.userId)],
+);
+
 export type User = typeof users.$inferSelect;
 export type Product = typeof products.$inferSelect;
 export type NewProduct = typeof products.$inferInsert;
@@ -372,3 +429,4 @@ export type NewPurchaseEventRow = typeof purchaseEvents.$inferInsert;
 export type InventoryCorrection = typeof inventoryCorrections.$inferSelect;
 export type NewInventoryCorrection = typeof inventoryCorrections.$inferInsert;
 export type QuestionSnooze = typeof questionSnoozes.$inferSelect;
+export type RestockSuggestionRow = typeof restockSuggestions.$inferSelect;

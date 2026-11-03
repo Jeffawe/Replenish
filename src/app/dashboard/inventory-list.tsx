@@ -1,10 +1,13 @@
 import { requireUser } from "@/modules/auth";
+import { DEFAULT_PREDICT_CONFIG } from "@/core/predict";
 import { getInventory } from "@/modules/inventory/service";
+import { getUserSettings } from "@/modules/settings";
 import { InventoryCard, getStatus } from "./inventory-card";
 
 export async function InventoryList() {
   const user = await requireUser();
-  const items = await getInventory(user.id);
+  const [items, settings] = await Promise.all([getInventory(user.id), getUserSettings(user.id)]);
+  const defaultThresholdDays = settings.lowStockThresholdDays ?? DEFAULT_PREDICT_CONFIG.defaultLowStockThresholdDays;
   // Read after the queries so the clock is a request-time value.
   const now = new Date();
 
@@ -43,7 +46,14 @@ export async function InventoryList() {
       </dl>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((item) => (
-          <InventoryCard key={item.product.id} item={item} now={now} categories={categories} others={others} />
+          <InventoryCard
+            key={item.product.id}
+            item={item}
+            now={now}
+            categories={categories}
+            others={others}
+            defaultThresholdDays={defaultThresholdDays}
+          />
         ))}
       </div>
     </>

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dollarsToCents } from "@/core/user-settings";
 
 export const InventoryCorrectionInputSchema = z.object({
   productId: z.uuid(),
@@ -40,27 +41,52 @@ const optionalNumber = (message: string) =>
  * null: for stored settings that clears them, for `remainingNow` it means
  * the user did not give a count.
  */
-export const ProductEditSchema = z.object({
-  productId: z.uuid(),
-  name: z.string().trim().min(1, "Give it a name").max(200, "That is too long"),
-  /** Sent as "true"/"false" by a hidden field, so a form without the switch on show keeps the setting. */
-  matchByName: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
-  unit: z.string().trim().min(1, "Enter a unit, like rolls or bottles").max(40),
-  category: z.preprocess(blankToNull, z.string().trim().max(60).nullable()),
-  brand: z
-    .preprocess(blankToNull, z.string().max(200, "That is too long").nullable())
-    .transform(normalizeBrands),
-  remainingNow: optionalNumber("Enter a number").pipe(
-    z.number().min(0, "Can't be negative").max(1_000_000).nullable(),
-  ),
-  fallbackDaysPerPurchase: optionalNumber("Enter a number of days").pipe(
-    z.number().int("Use whole days").min(1, "At least 1 day").max(3650).nullable(),
-  ),
-  typicalLeftoverAtPurchase: optionalNumber("Enter a number").pipe(
-    z.number().min(0, "Can't be negative").max(1_000_000).nullable(),
-  ),
-  lowStockThresholdDays: optionalNumber("Enter a number of days").pipe(
-    z.number().int("Use whole days").min(1, "At least 1 day").max(365).nullable(),
-  ),
-});
+export const ProductEditSchema = z
+  .object({
+    productId: z.uuid(),
+    name: z.string().trim().min(1, "Give it a name").max(200, "That is too long"),
+    /** Sent as "true"/"false" by a hidden field, so a form without the switch on show keeps the setting. */
+    matchByName: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
+    unit: z.string().trim().min(1, "Enter a unit, like rolls or bottles").max(40),
+    category: z.preprocess(blankToNull, z.string().trim().max(60).nullable()),
+    brand: z
+      .preprocess(blankToNull, z.string().max(200, "That is too long").nullable())
+      .transform(normalizeBrands),
+    remainingNow: optionalNumber("Enter a number").pipe(
+      z.number().min(0, "Can't be negative").max(1_000_000).nullable(),
+    ),
+    fallbackDaysPerPurchase: optionalNumber("Enter a number of days").pipe(
+      z.number().int("Use whole days").min(1, "At least 1 day").max(3650).nullable(),
+    ),
+    typicalLeftoverAtPurchase: optionalNumber("Enter a number").pipe(
+      z.number().min(0, "Can't be negative").max(1_000_000).nullable(),
+    ),
+    lowStockThresholdDays: optionalNumber("Enter a number of days").pipe(
+      z.number().int("Use whole days").min(1, "At least 1 day").max(365).nullable(),
+    ),
+    /** Buy this automatically. Missing keeps the setting, like matchByName; the service refuses it for an unconfirmed product. */
+    autobuyEnabled: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true")
+      .optional(),
+    /** This product's own auto-buy price range in dollars (blank = use the user's). */
+    autobuyMinPrice: optionalNumber("Enter an amount like 12.50").pipe(
+      z.number().min(0, "Can't be negative").max(100_000, "That is too large").nullable(),
+    ),
+    autobuyMaxPrice: optionalNumber("Enter an amount like 12.50").pipe(
+      z.number().min(0, "Can't be negative").max(100_000, "That is too large").nullable(),
+    ),
+    /** Where it is bought. Blank clears it; missing keeps it (see boughtFromAfterEdit). */
+    boughtFrom: z.string().trim().max(80, "That is too long").optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.autobuyMinPrice !== null && value.autobuyMaxPrice !== null && value.autobuyMinPrice > value.autobuyMaxPrice) {
+      ctx.addIssue({ code: "custom", path: ["autobuyMaxPrice"], message: "The most can't be less than the least" });
+    }
+  })
+  .transform(({ autobuyMinPrice, autobuyMaxPrice, ...rest }) => ({
+    ...rest,
+    autobuyMinPriceCents: autobuyMinPrice === null ? null : dollarsToCents(autobuyMinPrice),
+    autobuyMaxPriceCents: autobuyMaxPrice === null ? null : dollarsToCents(autobuyMaxPrice),
+  }));
 export type ProductEdit = z.output<typeof ProductEditSchema>;

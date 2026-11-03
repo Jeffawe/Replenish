@@ -5,13 +5,10 @@ import {
   productAliases,
   products,
   purchaseEvents,
-  type InventoryCorrection,
   type Product,
-  type PurchaseEventRow,
 } from "@/db/schema";
-import type { InventoryEstimate } from "@/core/estimate";
 import { arrived } from "@/core/arrived";
-import { predict } from "@/core/predict";
+import { boughtFromAfterEdit } from "@/core/bought-from";
 import {
   getProduct,
   listCorrections,
@@ -21,45 +18,23 @@ import {
   listPurchaseEvents,
 } from "./repo";
 import { normalizeProductName } from "@/core/product-name";
+import { getUserSettings } from "@/modules/settings";
+import { buildItem, type InventoryItem } from "./item";
+import { refreshNextCheck } from "./next-check";
 import { normalizeBrands, type ProductEdit } from "./types";
 
-export interface InventoryItem {
-  product: Product;
-  estimate: InventoryEstimate;
-  /** Newest first. */
-  purchases: PurchaseEventRow[];
-  /** Newest first. */
-  corrections: InventoryCorrection[];
-}
-
-function buildItem(
-  product: Product,
-  purchases: PurchaseEventRow[],
-  corrections: InventoryCorrection[],
-  now: Date,
-): InventoryItem {
-  const estimate = predict({
-    product,
-    purchases: purchases.map((p) => ({ quantity: p.quantity, purchasedAt: p.purchasedAt })),
-    corrections: corrections.map((c) => ({
-      remainingQuantity: c.remainingQuantity,
-      recordedAt: c.recordedAt,
-      estimatedAtTime: c.estimatedAtTime,
-    })),
-    now,
-  });
-  return { product, estimate, purchases, corrections };
-}
+export type { InventoryItem } from "./item";
 
 /**
  * Every product the user tracks with its current estimate, most urgent first.
  * Estimates are derived here on every call; nothing is stored.
  */
 export async function getInventory(userId: string, now?: Date): Promise<InventoryItem[]> {
-  const [productRows, purchaseRows, correctionRows] = await Promise.all([
+  const [productRows, purchaseRows, correctionRows, settings] = await Promise.all([
     listProducts(userId),
     listPurchaseEvents(userId),
     listCorrections(userId),
+    getUserSettings(userId),
   ]);
   // Products the user said not to track stay stored but out of sight.
   const tracked = productRows.filter((product) => product.archivedAt === null);
@@ -74,6 +49,7 @@ export async function getInventory(userId: string, now?: Date): Promise<Inventor
       here.filter((p) => p.productId === product.id),
       correctionRows.filter((c) => c.productId === product.id),
       at,
+      settings.lowStockThresholdDays,
     ),
   );
 
@@ -123,6 +99,11 @@ export async function saveProductEdit(
       fallbackDaysPerPurchase: edit.fallbackDaysPerPurchase,
       typicalLeftoverAtPurchase: edit.typicalLeftoverAtPurchase,
       lowStockThresholdDays: edit.lowStockThresholdDays,
+      // Never on for a product the user hasn't confirmed they track.
+      autobuyEnabled: edit.autobuyEnabled === undefined ? product.autobuyEnabled : edit.autobuyEnabled && product.confirmedAt !== null,
+      autobuyMinPriceCents: edit.autobuyMinPriceCents,
+      autobuyMaxPriceCents: edit.autobuyMaxPriceCents,
+      ...boughtFromAfterEdit(product, edit.boughtFrom),
     })
     .where(and(eq(products.id, product.id), eq(products.userId, userId)));
 
@@ -151,6 +132,7 @@ export async function saveProductEdit(
     ...(edit.unit !== product.unit ? [relabelPurchases] : []),
     ...(edit.remainingNow !== null ? [recordCount] : []),
   ]);
+  await refreshNextCheck(userId, [product.id]);
   return "saved";
 }
 
@@ -180,14 +162,17 @@ export async function recordStockCount(
     .insert(inventoryCorrections)
     .values({ userId, productId, remainingQuantity, estimatedAtTime })
     .returning({ id: inventoryCorrections.id });
+  await refreshNextCheck(userId, [productId]);
   return { correctionId: row.id };
 }
 
 /** Takes back a stock count the user just gave ("Undo"). The latest answer always wins otherwise. */
 export async function undoStockCount(userId: string, correctionId: string): Promise<void> {
-  await db
+  const removed = await db
     .delete(inventoryCorrections)
-    .where(and(eq(inventoryCorrections.id, correctionId), eq(inventoryCorrections.userId, userId)));
+    .where(and(eq(inventoryCorrections.id, correctionId), eq(inventoryCorrections.userId, userId)))
+    .returning({ productId: inventoryCorrections.productId });
+  await refreshNextCheck(userId, removed.map((row) => row.productId));
 }
 
 /**
@@ -226,6 +211,12 @@ export async function mergeProducts(
         fallbackDaysPerPurchase: into.fallbackDaysPerPurchase ?? from.fallbackDaysPerPurchase,
         typicalLeftoverAtPurchase: into.typicalLeftoverAtPurchase ?? from.typicalLeftoverAtPurchase,
         lowStockThresholdDays: into.lowStockThresholdDays ?? from.lowStockThresholdDays,
+        // The kept product's auto-buy switch stays as it is. Its price range is taken whole or not at all, so the bounds are never mixed.
+        ...(into.autobuyMinPriceCents === null && into.autobuyMaxPriceCents === null && {
+          autobuyMinPriceCents: from.autobuyMinPriceCents,
+          autobuyMaxPriceCents: from.autobuyMaxPriceCents,
+        }),
+        ...(into.boughtFrom === null && { boughtFrom: from.boughtFrom, boughtFromByUser: from.boughtFromByUser }),
         category: into.category ?? from.category,
         confirmedAt: into.confirmedAt ?? from.confirmedAt ?? new Date(),
         archivedAt: null,
@@ -233,5 +224,6 @@ export async function mergeProducts(
       .where(and(eq(products.userId, userId), eq(products.id, into.id))),
     db.delete(products).where(and(eq(products.userId, userId), eq(products.id, from.id))),
   ]);
+  await refreshNextCheck(userId, [into.id]);
   return "merged";
 }

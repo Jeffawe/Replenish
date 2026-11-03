@@ -16,6 +16,13 @@ export interface EditableProduct {
   typicalLeftoverAtPurchase: number | null;
   lowStockThresholdDays: number | null;
   matchByName: boolean;
+  boughtFrom: string | null;
+  /** The user has said they track it, which auto-buy needs before it can go on. */
+  confirmed: boolean;
+  autobuyEnabled: boolean;
+  /** This product's own price range, in cents (both null = the user's range from Settings). */
+  autobuyMinPriceCents: number | null;
+  autobuyMaxPriceCents: number | null;
 }
 
 interface Props {
@@ -46,6 +53,7 @@ export function EditProductDialog({
   const [state, formAction, pending] = useActionState(editProductAction, IDLE);
   const [name, setName] = useState(product.name);
   const [matchByName, setMatchByName] = useState(product.matchByName);
+  const [autobuy, setAutobuy] = useState(product.autobuyEnabled);
   const renamed = normalizeProductName(name) !== normalizeProductName(product.name);
 
   useEffect(() => {
@@ -56,6 +64,7 @@ export function EditProductDialog({
   const optionalHasError = ["remainingNow", "fallbackDaysPerPurchase", "typicalLeftoverAtPurchase", "lowStockThresholdDays"].some(
     (field) => errors[field]?.length,
   );
+  const autobuyHasError = ["autobuyMinPrice", "autobuyMaxPrice"].some((field) => errors[field]?.length);
   const titleId = `edit-title-${product.id}`;
   const fid = (name: string) => `${product.id}-${name}`;
   // Ties each input to its label, its hint or error text, and the form field name.
@@ -85,6 +94,7 @@ export function EditProductDialog({
         onClose={() => {
           setName(product.name);
           setMatchByName(product.matchByName);
+          setAutobuy(product.autobuyEnabled);
         }}
         // A click on the backdrop lands on the dialog element itself.
         onClick={(event) => {
@@ -183,6 +193,94 @@ export function EditProductDialog({
             >
               <input {...fieldProps("brand")} defaultValue={product.brand ?? ""} maxLength={200} className={INPUT} />
             </Field>
+
+            <Field
+              label="Where you buy it"
+              id={fid("boughtFrom")}
+              error={errors.boughtFrom?.[0]}
+              hint="We fill this in from your receipts and orders. Type your own and we'll leave it alone."
+            >
+              <input
+                {...fieldProps("boughtFrom")}
+                defaultValue={product.boughtFrom ?? ""}
+                placeholder="A store, like Walmart"
+                maxLength={80}
+                className={INPUT}
+              />
+            </Field>
+
+            <details open={autobuy || autobuyHasError || undefined} className="group rounded-xl border border-zinc-200 dark:border-zinc-800">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+                <span>
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    Auto-buy
+                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-normal text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                      {autobuy ? "On" : "Off"}
+                    </span>
+                  </span>
+                  <span className="block text-sm text-zinc-500 dark:text-zinc-400">Buy this for you when it runs low.</span>
+                </span>
+                <span aria-hidden className="text-zinc-400 transition-transform group-open:rotate-180">
+                  &#9662;
+                </span>
+              </summary>
+              <div className="flex flex-col gap-5 border-t border-zinc-200 px-4 py-4 dark:border-zinc-800">
+                <input type="hidden" name="autobuyEnabled" value={String(autobuy && product.confirmed)} />
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={autobuy && product.confirmed}
+                    disabled={!product.confirmed}
+                    onChange={(event) => setAutobuy(event.target.checked)}
+                    className="mt-0.5 size-4 shrink-0"
+                  />
+                  <span>
+                    <span className="font-medium">Buy {product.name} automatically</span>
+                    <span className="block text-zinc-500 dark:text-zinc-400">
+                      {product.confirmed
+                        ? "When it runs low we find it and buy it, if we're sure enough and the price is in your range. Otherwise we ask you first. With this off, we always ask."
+                        : "Confirm that you keep track of this product first (we'll ask on the dashboard), then you can switch this on."}
+                    </span>
+                  </span>
+                </label>
+
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">Price range for this product</span>
+                  <div className="flex items-center gap-2">
+                    <Suffix>$</Suffix>
+                    <input
+                      {...fieldProps("autobuyMinPrice")}
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      placeholder="Least"
+                      aria-label="Least price"
+                      defaultValue={product.autobuyMinPriceCents === null ? "" : product.autobuyMinPriceCents / 100}
+                      className={INPUT}
+                    />
+                    <Suffix>to $</Suffix>
+                    <input
+                      {...fieldProps("autobuyMaxPrice")}
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      placeholder="Most"
+                      aria-label="Most price"
+                      defaultValue={product.autobuyMaxPriceCents === null ? "" : product.autobuyMaxPriceCents / 100}
+                      className={INPUT}
+                    />
+                  </div>
+                  <p
+                    id={`${fid("autobuyMinPrice")}-help`}
+                    className={errors.autobuyMinPrice?.[0] || errors.autobuyMaxPrice?.[0] ? "text-sm text-rose-700 dark:text-rose-300" : "text-sm text-zinc-500 dark:text-zinc-400"}
+                  >
+                    {errors.autobuyMinPrice?.[0] ?? errors.autobuyMaxPrice?.[0] ?? "Leave both blank to use your range from Settings. Fill in one to leave the other side open."}
+                  </p>
+                </div>
+              </div>
+            </details>
 
             <details
               open={optionalHasError || undefined}

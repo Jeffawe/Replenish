@@ -7,7 +7,7 @@ import type { EmailMessage } from "./types";
  *   Subject: Ordered 1 item: Phone Accessories
  *   Arriving tomorrow
  *   1 item: Phone Accessories
- *   Order # 114-5269025-1661830
+ *   Order # 114-0000000-0000001
  *
  * So the item is whatever Amazon names it (sometimes a category, not a product), the
  * arrival can be relative ("tomorrow", worked out from the order's own date), and there

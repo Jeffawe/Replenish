@@ -89,3 +89,28 @@ describe("ProductEditSchema", () => {
     expect(ProductEditSchema.safeParse({ productId: "nope", unit: "rolls" }).success).toBe(false);
   });
 });
+
+describe("ProductEditSchema: auto-buy and where it was bought", () => {
+  it("reads the switch as a boolean, and leaves it out when the form has none", () => {
+    expect(parse({ autobuyEnabled: "true" }).data?.autobuyEnabled).toBe(true);
+    expect(parse({ autobuyEnabled: "false" }).data?.autobuyEnabled).toBe(false);
+    expect(parse({}).data?.autobuyEnabled).toBeUndefined();
+  });
+
+  it("turns the price range in dollars into cents, blank into none", () => {
+    expect(parse({ autobuyMinPrice: "2.50", autobuyMaxPrice: "9" }).data).toMatchObject({ autobuyMinPriceCents: 250, autobuyMaxPriceCents: 900 });
+    expect(parse({ autobuyMinPrice: "", autobuyMaxPrice: "" }).data).toMatchObject({ autobuyMinPriceCents: null, autobuyMaxPriceCents: null });
+  });
+
+  it("refuses a most price below the least price, pointing at the most", () => {
+    const result = parse({ autobuyMinPrice: "10", autobuyMaxPrice: "5" });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(["autobuyMaxPrice"]);
+  });
+
+  it("trims the store, keeps blank as blank (to clear it) and leaves it out when missing", () => {
+    expect(parse({ boughtFrom: "  Costco " }).data?.boughtFrom).toBe("Costco");
+    expect(parse({ boughtFrom: "" }).data?.boughtFrom).toBe("");
+    expect(parse({}).data?.boughtFrom).toBeUndefined();
+  });
+});

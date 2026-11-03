@@ -113,6 +113,8 @@ describe("renaming and merging products", () => {
     fallbackDaysPerPurchase: null,
     typicalLeftoverAtPurchase: null,
     lowStockThresholdDays: null,
+    autobuyMinPriceCents: null,
+    autobuyMaxPriceCents: null,
   });
 
   it("keeps the old name as a wording that still matches the product", async () => {
@@ -167,5 +169,93 @@ describe("renaming and merging products", () => {
     );
     const dozen = made.items[0]!.result === "created" ? made.items[0]!.productId : "";
     expect(await mergeProducts(userId, dozen, eggs)).toEqual({ unitsDiffer: ["dozen", "each"] });
+  });
+});
+
+describe("auto-buy switch, price range and where it was bought", () => {
+  const edit = (productId: string, extra: Record<string, unknown> = {}) => ({
+    productId,
+    name: "Eggs",
+    matchByName: true,
+    unit: "each",
+    category: null,
+    brand: null,
+    remainingNow: null,
+    fallbackDaysPerPurchase: null,
+    typicalLeftoverAtPurchase: null,
+    lowStockThresholdDays: null,
+    autobuyMinPriceCents: null,
+    autobuyMaxPriceCents: null,
+    ...extra,
+  });
+  const buyAt = (userId: string, day: string, store: string | undefined) =>
+    ingestPurchaseBatch(
+      userId,
+      PurchaseBatchSchema.parse({ source: "receipt", idempotencyKey: randomUUID(), purchasedAt: day, store, items: [{ productName: "Eggs", quantity: 12, unit: "each" }] }),
+    );
+
+  it("starts off, and won't switch on for a product nobody has confirmed", async () => {
+    const { userId, productId, product } = await setup();
+    expect((await product()).autobuyEnabled).toBe(false);
+    await saveProductEdit(userId, edit(productId, { autobuyEnabled: true }));
+    expect((await product()).autobuyEnabled).toBe(false);
+
+    await confirmProduct(userId, productId);
+    await saveProductEdit(userId, edit(productId, { autobuyEnabled: true }));
+    expect((await product()).autobuyEnabled).toBe(true);
+  });
+
+  it("keeps the switch when the form doesn't send it, and switches off when told", async () => {
+    const { userId, productId, product } = await setup();
+    await confirmProduct(userId, productId);
+    await saveProductEdit(userId, edit(productId, { autobuyEnabled: true }));
+    await saveProductEdit(userId, edit(productId));
+    expect((await product()).autobuyEnabled).toBe(true);
+    await saveProductEdit(userId, edit(productId, { autobuyEnabled: false }));
+    expect((await product()).autobuyEnabled).toBe(false);
+  });
+
+  it("stores the product's own price range", async () => {
+    const { userId, productId, product } = await setup();
+    await saveProductEdit(userId, edit(productId, { autobuyMinPriceCents: 300, autobuyMaxPriceCents: 900 }));
+    expect(await product()).toMatchObject({ autobuyMinPriceCents: 300, autobuyMaxPriceCents: 900 });
+  });
+
+  it("fills where it was bought from the receipt's store, following the latest purchase", async () => {
+    const { userId, product } = await setup(); // the first purchase has no store
+    expect((await product()).boughtFrom).toBeNull();
+    await buyAt(userId, "2026-10-10", "Walmart");
+    expect(await product()).toMatchObject({ boughtFrom: "Walmart", boughtFromByUser: false });
+    await buyAt(userId, "2026-10-20", "Costco");
+    expect((await product()).boughtFrom).toBe("Costco");
+    // An older receipt scanned late doesn't take it back.
+    await buyAt(userId, "2026-10-05", "Target");
+    expect((await product()).boughtFrom).toBe("Costco");
+  });
+
+  it("never overwrites a store the user typed, and takes over again when they clear it", async () => {
+    const { userId, productId, product } = await setup();
+    await saveProductEdit(userId, edit(productId, { boughtFrom: "Whole Foods" }));
+    expect(await product()).toMatchObject({ boughtFrom: "Whole Foods", boughtFromByUser: true });
+    await buyAt(userId, "2026-10-20", "Costco");
+    expect((await product()).boughtFrom).toBe("Whole Foods");
+
+    await saveProductEdit(userId, edit(productId, { boughtFrom: "" }));
+    expect(await product()).toMatchObject({ boughtFrom: null, boughtFromByUser: false });
+    await buyAt(userId, "2026-10-21", "Costco");
+    expect((await product()).boughtFrom).toBe("Costco");
+  });
+
+  it("brings the store and price range across a merge only where the kept product has none", async () => {
+    const { userId, productId: eggs, product } = await setup();
+    const made = await ingestPurchaseBatch(
+      userId,
+      PurchaseBatchSchema.parse({ source: "receipt", idempotencyKey: randomUUID(), purchasedAt: "2026-10-05", store: "Aldi", items: [{ productName: "Lg Eggs", quantity: 18, unit: "each" }] }),
+    );
+    const duplicate = made.items[0]!.result === "created" ? made.items[0]!.productId : "";
+    await saveProductEdit(userId, { ...edit(duplicate), name: "Lg Eggs", autobuyMinPriceCents: 100, autobuyMaxPriceCents: 500 });
+
+    expect(await mergeProducts(userId, duplicate, eggs)).toBe("merged");
+    expect(await product()).toMatchObject({ boughtFrom: "Aldi", autobuyMinPriceCents: 100, autobuyMaxPriceCents: 500, autobuyEnabled: false });
   });
 });
