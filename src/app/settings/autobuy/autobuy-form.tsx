@@ -1,17 +1,19 @@
 "use client";
 
 import { useActionState } from "react";
-import { MIN_AUTOBUY_CONFIDENCE, type UserSettings } from "@/modules/settings/client";
+import { MIN_AUTOBUY_CONFIDENCE, type PlatformLimits, type UserSettings } from "@/modules/settings/client";
 import { saveAutobuySettingsAction, type SettingsFormState } from "../actions";
 import { Field, INPUT, SaveBar, Suffix } from "../fields";
+import { PreferredStores } from "./preferred-stores";
 
 const IDLE: SettingsFormState = { status: "idle" };
 const FLOOR_PERCENT = Math.round(MIN_AUTOBUY_CONFIDENCE * 100);
 
 /** 1250 -> "12.5", null -> "" (the input's own value). */
+const whole = (cents: number) => `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
 const dollars = (cents: number | null) => (cents === null ? "" : String(cents / 100));
 
-export function AutobuyForm({ settings }: { settings: UserSettings }) {
+export function AutobuyForm({ settings, limits }: { settings: UserSettings; limits: PlatformLimits }) {
   const [state, formAction, pending] = useActionState(saveAutobuySettingsAction, IDLE);
   const errors = state.fieldErrors ?? {};
   const props = (name: string) => ({
@@ -76,7 +78,7 @@ export function AutobuyForm({ settings }: { settings: UserSettings }) {
           />
         </div>
         <p id="minPrice-help" className={priceError ? "text-sm text-rose-700 dark:text-rose-300" : "text-sm text-zinc-500 dark:text-zinc-400"}>
-          {priceError ?? "Per item. Leave either blank for no limit. A product can have its own range in its Edit dialog."}
+          {priceError ?? `For the whole order, with tax, shipping and fees. Auto-buy can spend at most ${whole(limits.orderCents)} on one order; set a lower most if you like. A product can have its own range in its Edit dialog.`}
         </p>
       </div>
 
@@ -84,7 +86,7 @@ export function AutobuyForm({ settings }: { settings: UserSettings }) {
         label="Spend at most this much a month"
         id="monthlyCap"
         error={errors.monthlyCap?.[0]}
-        hint="Across everything we buy for you. Leave blank for no cap."
+        hint={`Across everything we buy for you. Auto-buy stops at ${whole(limits.monthCents)} a month; set a lower amount if you like, or leave blank to use that.`}
       >
         <div className="flex items-center gap-2">
           <Suffix>$</Suffix>
@@ -111,6 +113,8 @@ export function AutobuyForm({ settings }: { settings: UserSettings }) {
           <Suffix>days</Suffix>
         </div>
       </Field>
+
+      <PreferredStores stores={settings.preferredStores} error={errors.preferredStores?.[0]} />
 
       <SaveBar pending={pending} status={state.status} message={state.message} />
     </form>

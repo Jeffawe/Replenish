@@ -40,7 +40,7 @@ describe("email extractor with the real readers", () => {
       store: "Amazon",
       idempotencyKey: "email-amazon-114-0000000-0000001",
       purchasedAt: new Date("2026-11-02T12:00:00Z"),
-      items: [{ productName: "Dish Soap", quantity: 2, unit: "each" }],
+      items: [{ productName: "Dish Soap", quantity: 2, unit: "bottle" }],
     });
   });
 
@@ -99,5 +99,46 @@ describe("email extractor", () => {
     const result = await createEmailExtractor(async () => order, () => true).extract(message(), ctx([{ ...milk, matchByName: false }]));
     if (result.kind !== "draft") throw new Error("expected a draft");
     expect(result.draft.batch.items[0]!.productId).toBeUndefined();
+  });
+});
+
+describe("email lines match the way receipt lines do", () => {
+  const paper = { id: "22222222-2222-4222-8222-222222222222", name: "Toilet Paper", brand: null, category: null, unit: "rolls", normalPurchaseQty: 12, matchByName: true };
+  const reading = (name: string, quantity = 1) => createEmailExtractor(async () => ({ orderId: "114-0000000-0000001", arrivesAt: null, lines: [{ name, quantity }] }), () => true);
+
+  it("ties a long store title to the user's product through the dictionary, and counts the pack", async () => {
+    const result = await reading("Charmin Ultra Soft Toilet Paper, 12 Mega Rolls").extract(message(), ctx([paper]));
+    if (result.kind !== "draft") throw new Error("expected a draft");
+    expect(result.draft.batch.items[0]).toMatchObject({ productName: "Toilet Paper", productId: paper.id, quantity: 12, unit: "rolls", brand: "Charmin" });
+    expect(result.draft.lines?.[0]?.matchedBy).toBe("name");
+  });
+
+  it("names a new product for the item, not the whole title", async () => {
+    const result = await reading("Bounty Select-A-Size Paper Towels, 6 Rolls").extract(message(), ctx([]));
+    if (result.kind !== "draft") throw new Error("expected a draft");
+    expect(result.draft.batch.items[0]).toMatchObject({ productName: "Paper Towels", quantity: 6, unit: "rolls", category: "Household" });
+  });
+
+  it("uses a wording the user has saved", async () => {
+    const extractor = createEmailExtractor(async () => ({ orderId: "114-0000000-0000001", arrivesAt: null, lines: [{ name: "Zorbo Soft Sheets", quantity: 1 }] }), () => true, { loadAliases: async () => [{ alias: "zorbo soft sheets", productId: paper.id }] });
+    const result = await extractor.extract(message(), ctx([paper]));
+    if (result.kind !== "draft") throw new Error("expected a draft");
+    expect(result.draft.batch.items[0]).toMatchObject({ productId: paper.id });
+    expect(result.draft.lines?.[0]?.matchedBy).toBe("alias");
+  });
+
+  it("leaves out what doesn't get used up, and says so when that is everything", async () => {
+    const result = await reading("Winter Jacket").extract(message(), ctx([]));
+    expect(result).toEqual({ kind: "skipped", reason: "Nothing in this order gets used up" });
+  });
+
+  it("leaves out Amazon's own wording for a category that isn't used up, from a real email", async () => {
+    expect(await reading("Phone Accessories").extract(message(), ctx([]))).toEqual({ kind: "skipped", reason: "Nothing in this order gets used up" });
+  });
+
+  it("keeps a line it doesn't recognise, as the email names it", async () => {
+    const result = await reading("Zebra Thing 3000").extract(message(), ctx([]));
+    if (result.kind !== "draft") throw new Error("expected a draft");
+    expect(result.draft.batch.items[0]).toMatchObject({ productName: "Zebra Thing 3000", quantity: 1, unit: "each" });
   });
 });

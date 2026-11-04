@@ -1,0 +1,1 @@
+ALTER TABLE "paypal_accounts" ADD COLUMN "suggested_address" jsonb;

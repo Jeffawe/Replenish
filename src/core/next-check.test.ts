@@ -77,3 +77,25 @@ describe("nextCheckAt", () => {
     expect(nextCheckAt({ estimate: estimate(10), now, leadDays: 3, nextArrival: days(9) })).toEqual(days(3));
   });
 });
+
+describe("a product bought more often than the low-stock window", () => {
+  const weekly = { daysUntilRunOut: 7, daysUntilRunOutRange: null, lowStockThresholdDays: 7, usualPackDays: 7, thresholdIsDefault: true };
+
+  it("doesn't need attention the moment it is bought", () => {
+    expect(attentionWindowDays(weekly, 3)).toBe(3.5);
+    expect(needsAttention(weekly, 3)).toBe(false);
+    expect(needsAttention({ ...weekly, daysUntilRunOut: 3 }, 3)).toBe(true);
+  });
+
+  it("leaves a product that lasts a long time alone", () => {
+    expect(attentionWindowDays({ lowStockThresholdDays: 7, usualPackDays: 28, thresholdIsDefault: true }, 3)).toBe(7);
+  });
+
+  it("leaves a threshold the user chose as they set it", () => {
+    expect(attentionWindowDays({ ...weekly, lowStockThresholdDays: 10, thresholdIsDefault: false }, 3)).toBe(10);
+  });
+
+  it("keeps a long lead time under the life of a purchase", () => {
+    expect(attentionWindowDays(weekly, 30)).toBe(5.25);
+  });
+});

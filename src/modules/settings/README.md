@@ -29,3 +29,13 @@ The rules and defaults are plain functions in `src/core/user-settings.ts` (the 8
 ## Not built yet
 
 The price range is read by the finder (`src/modules/restock`) to flag listings outside it; nothing reads the confidence or monthly cap yet. They are saved for the step after the low-stock check (see AGENTS.md), which will buy or ask. The lead days and the low-stock threshold are read by that check: a product needs attention within whichever is longer. Saving either form refreshes `next_check_at` for all the user's products.
+
+## Delivery address
+
+`getDeliveryAddress` / `saveDeliveryAddress` and `DeliveryAddressSchema` (in `types.ts`): where orders are delivered, kept on `user_settings` (all fields, or none: `getDeliveryAddress` is null until it is complete). US addresses only; the phone is kept as ten digits. The form is on Settings > Payment & delivery (`src/app/settings/payment/`), next to connecting PayPal, which belongs to the orders module (docs/orders.md). The schema ignores fields it doesn't know, because a submitted form carries hidden ones of Next's own.
+
+**Preferred stores** (`preferred_stores`, a ranked list, Settings > Auto-buy): listings at these stores rank first, in the user's order, and with any listed, auto-buy asks before buying anywhere else. Food is only searched at Walmart and Amazon whatever the list says, because those are the stores Zinc can order from. The price range covers the whole order, with tax, shipping and fees.
+
+**Our limits** (`platformLimitsFrom`, `AUTOBUY_MAX_ORDER`, `AUTOBUY_MAX_MONTH`; defaults $50 and $200): the most auto-buy may spend for a user. Their own limits can only be lower. `skip_buy_confirm` is "Don't show me this again" on Buy for me.
+
+`BUY_NOW_MAX_ORDER` (default $150) caps one Buy for me order. `PLANNED_USERS` (default 100) × `AUTOBUY_MAX_MONTH` is the month's budget across all users. See docs/orders.md.

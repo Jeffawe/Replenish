@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireUser } from "@/modules/auth";
 import { mergeProducts, saveProductEdit } from "@/modules/inventory/service";
+import { autoBuySetupProblem } from "@/modules/orders";
 import { ProductEditSchema } from "@/modules/inventory/types";
+import { platformLimits } from "@/modules/settings";
 
 export type EditProductState = {
   status: "idle" | "saved" | "error";
@@ -30,9 +32,20 @@ export async function editProductAction(
     };
   }
 
-  const result = await saveProductEdit(user.id, parsed.data);
+  // A product's own limit can be lower than ours, never higher.
+  const most = platformLimits().orderCents;
+  if (parsed.data.autobuyMaxPriceCents !== null && parsed.data.autobuyMaxPriceCents > most) {
+    return { status: "error", message: "Some answers need a look.", fieldErrors: { autobuyMaxPrice: [`The most auto-buy can spend on one order is $${(most / 100).toFixed(2)}.`] } };
+  }
+
+  // Switching auto-buy on needs PayPal and an address to buy with; only look when the form asks for it.
+  const setupProblem = parsed.data.autobuyEnabled ? await autoBuySetupProblem(user.id) : null;
+  const result = await saveProductEdit(user.id, parsed.data, { canEnableAutobuy: setupProblem === null });
   if (result === "not-found") {
     return { status: "error", message: "That product no longer exists." };
+  }
+  if (result === "autobuy-blocked") {
+    return { status: "error", message: `${setupProblem} Nothing was saved.` };
   }
   if (typeof result === "object") {
     return {

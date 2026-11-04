@@ -1,24 +1,13 @@
 import { requireUser } from "@/modules/auth";
 import { listSuggestions } from "@/modules/restock";
-import { SuggestionCard } from "./suggestion-card";
+import { getUserSettings, platformLimits } from "@/modules/settings";
+import { SuggestionCarousel } from "./suggestion-carousel";
 
 /** What the last check found for products that are running low, loaded with the dashboard. Nothing shows when there is nothing to say. */
 export async function RestockSuggestions() {
   const user = await requireUser();
-  const suggestions = await listSuggestions(user.id, new Date());
+  const [suggestions, settings] = await Promise.all([listSuggestions(user.id, new Date()), getUserSettings(user.id)]);
   if (suggestions.length === 0) return null;
 
-  return (
-    <section aria-label="Running low" className="flex flex-col gap-3">
-      <ul className="flex flex-col gap-3">
-        {suggestions.map((suggestion) => (
-          <li key={suggestion.id}>
-            <SuggestionCard
-              suggestion={{ ...suggestion, searchedAt: suggestion.searchedAt.toISOString().slice(0, 10) }}
-            />
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
+  return <SuggestionCarousel skipConfirm={settings.skipBuyConfirm} maxOrderCents={platformLimits().buyNowOrderCents} suggestions={suggestions.map((suggestion) => ({ ...suggestion, searchedAt: suggestion.searchedAt.toISOString().slice(0, 10) }))} />;
 }

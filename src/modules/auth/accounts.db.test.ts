@@ -4,6 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { sessions, users } from "@/db/schema";
+import { clearFailedLogins, LOGIN_WINDOW_MS, MAX_FAILED_LOGINS, noteFailedLogin, tooManyFailedLogins, verifyWithLimit } from "./attempts";
 import { checkCredentials, claimAccount, createAccount, getDefaultUser } from "./accounts";
 import { createSession, deleteSession, findUserBySession, SESSION_DAYS } from "./sessions";
 
@@ -108,5 +109,37 @@ describe("the default user", () => {
       if (before === undefined) delete process.env.INGEST_USER_EMAIL;
       else process.env.INGEST_USER_EMAIL = before;
     }
+  });
+});
+
+describe("guessing passwords", () => {
+  const email = () => `limit-${crypto.randomUUID()}@test.local`;
+
+  it("stops trying after too many wrong answers, without even looking at the password", async () => {
+    const address = email();
+    let looked = 0;
+    const wrong = async () => {
+      looked++;
+      return false;
+    };
+    for (let i = 0; i < MAX_FAILED_LOGINS; i++) expect(await verifyWithLimit(address, wrong)).toBe("wrong");
+    expect(await verifyWithLimit(address, async () => true)).toBe("locked");
+    expect(looked).toBe(MAX_FAILED_LOGINS);
+    await clearFailedLogins(address);
+  });
+
+  it("forgets the wrong answers on the right one", async () => {
+    const address = email();
+    await verifyWithLimit(address, async () => false);
+    expect(await verifyWithLimit(address, async () => true)).toBe("ok");
+    expect(await tooManyFailedLogins(address)).toBe(false);
+  });
+
+  it("forgets them when the window has passed", async () => {
+    const address = email();
+    for (let i = 0; i < MAX_FAILED_LOGINS; i++) await noteFailedLogin(address);
+    expect(await tooManyFailedLogins(address)).toBe(true);
+    expect(await tooManyFailedLogins(address, new Date(Date.now() + LOGIN_WINDOW_MS + 1000))).toBe(false);
+    await clearFailedLogins(address);
   });
 });

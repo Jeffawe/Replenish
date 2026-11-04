@@ -22,6 +22,10 @@ export interface UserSettings {
   autobuyLeadDays: number;
   /** Call a product low this many days before it runs out. Null = the default in predict.ts. */
   lowStockThresholdDays: number | null;
+  /** The stores the user wants to buy from, most wanted first. Empty = no preference. */
+  preferredStores: string[];
+  /** The user said not to ask for confirmation on "Buy for me". */
+  skipBuyConfirm: boolean;
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
@@ -31,11 +35,68 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   autobuyMonthlyCapCents: null,
   autobuyLeadDays: 3,
   lowStockThresholdDays: null,
+  preferredStores: [],
+  skipBuyConfirm: false,
 };
 
 /** A stored confidence kept inside what is allowed, in case the floor is ever raised. */
 export function clampConfidence(value: number): number {
   return Math.min(1, Math.max(MIN_AUTOBUY_CONFIDENCE, value));
+}
+
+/**
+ * What may be spent, whatever a user sets, because orders are paid from our Zinc wallet first. Users
+ * can lower the auto-buy limits, never raise them. The owner sets these in the environment, in dollars:
+ * AUTOBUY_MAX_ORDER, AUTOBUY_MAX_MONTH and BUY_NOW_MAX_ORDER; and PLANNED_USERS, a count. A missing or
+ * nonsense value means the default.
+ */
+export interface PlatformLimits {
+  /** The most auto-buy may spend on one order, fees included. */
+  orderCents: number;
+  /** The most auto-buy may spend for one user in a month. */
+  monthCents: number;
+  /** The most one "Buy for me" order may cost, fees included. */
+  buyNowOrderCents: number;
+  /** How many users the budget is planned for. Raise it as the app grows. */
+  plannedUsers: number;
+  /** The most all users' orders together may cost in a month: plannedUsers x monthCents. */
+  allUsersMonthCents: number;
+}
+
+export const DEFAULT_PLANNED_USERS = 100;
+
+export const DEFAULT_PLATFORM_LIMITS: PlatformLimits = {
+  orderCents: 5000,
+  monthCents: 20000,
+  buyNowOrderCents: 15000,
+  plannedUsers: DEFAULT_PLANNED_USERS,
+  allUsersMonthCents: DEFAULT_PLANNED_USERS * 20000,
+};
+
+export function platformLimitsFrom(env: { order?: string; month?: string; buyNowOrder?: string; plannedUsers?: string }): PlatformLimits {
+  const positive = (value: string | undefined) => {
+    const parsed = Number(value);
+    return value?.trim() && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  };
+  const cents = (value: string | undefined, fallback: number) => {
+    const dollars = positive(value);
+    return dollars === null ? fallback : Math.round(dollars * 100);
+  };
+  const monthCents = cents(env.month, DEFAULT_PLATFORM_LIMITS.monthCents);
+  const users = positive(env.plannedUsers);
+  const plannedUsers = users !== null && users >= 1 ? Math.floor(users) : DEFAULT_PLANNED_USERS;
+  return {
+    orderCents: cents(env.order, DEFAULT_PLATFORM_LIMITS.orderCents),
+    monthCents,
+    buyNowOrderCents: cents(env.buyNowOrder, DEFAULT_PLATFORM_LIMITS.buyNowOrderCents),
+    plannedUsers,
+    allUsersMonthCents: plannedUsers * monthCents,
+  };
+}
+
+/** A limit the user set, held to the platform's most. No limit of their own means the platform's. */
+export function effectiveLimit(userCents: number | null, platformCents: number): number {
+  return userCents === null ? platformCents : Math.min(userCents, platformCents);
 }
 
 export interface PriceRange {

@@ -1,6 +1,8 @@
-import { brandsOf, pickOffers, searchQueryFor, type PickedOffer } from "@/core/pick-offer";
+import { brandsOf, canOrderFrom, pickOffers, searchQueryFor, type PickedOffer, type Wanted } from "@/core/pick-offer";
 import { priceRangeFor, type UserSettings } from "@/core/user-settings";
+import { loadDictionary, wordingsFor } from "@/modules/dictionary";
 import { getUserSettings } from "@/modules/settings";
+import { listingReviewerFromEnv, type ListingReviewer } from "./ai-review";
 import type { LowProduct } from "./check";
 import { SearchError, type ProductSearch } from "./search-types";
 
@@ -14,7 +16,7 @@ import { SearchError, type ProductSearch } from "./search-types";
 const ALTERNATIVES = 2;
 
 export type Finding =
-  | { status: "found"; query: string; pick: PickedOffer; alternatives: PickedOffer[]; listings: number }
+  | { status: "found"; query: string; pick: PickedOffer; alternatives: PickedOffer[]; listings: number; reason: string | null }
   | {
       status: "none";
       query: string;
@@ -28,25 +30,34 @@ export type Finding =
 export async function findOnline(
   { product, estimate }: Pick<LowProduct, "product" | "estimate">,
   search: ProductSearch,
-  settings: Pick<UserSettings, "autobuyMinPriceCents" | "autobuyMaxPriceCents">,
+  settings: Pick<UserSettings, "autobuyMinPriceCents" | "autobuyMaxPriceCents"> & Partial<Pick<UserSettings, "preferredStores">>,
+  synonyms: string[] = [],
+  reviewer: ListingReviewer | null = null,
 ): Promise<Finding> {
   const query = searchQueryFor(product);
   try {
     const candidates = await search.search(query, { category: product.category });
     if (candidates.length === 0) return { status: "none", query, reason: "no-results", listings: 0 };
 
-    const picks = pickOffers(candidates, {
+    const wanted: Wanted = {
       name: product.name,
       unit: product.unit,
       category: product.category,
       brands: brandsOf(product.brand),
       store: product.boughtFrom,
+      storeIsGuess: !product.boughtFromByUser,
+      preferredStores: settings.preferredStores ?? [],
+      synonyms,
+      canOrderFrom,
       quantity: estimate.normalPurchaseQty,
       range: priceRangeFor(settings, product),
-    });
-    const [best, ...rest] = picks;
+    };
+    // The rules first: only what they accept goes to the AI, which then can't bring back what they refused.
+    const ruled = pickOffers(candidates, wanted);
+    const reviewed = reviewer ? await reviewer.review(wanted, ruled) : null;
+    const [best, ...rest] = reviewed?.picks ?? ruled;
     if (!best) return { status: "none", query, reason: "no-usable-listing", listings: candidates.length };
-    return { status: "found", query, pick: best, alternatives: rest.slice(0, ALTERNATIVES), listings: candidates.length };
+    return { status: "found", query, pick: best, alternatives: rest.slice(0, ALTERNATIVES), listings: candidates.length, reason: reviewed?.reason ?? null };
   } catch (error) {
     if (!(error instanceof SearchError)) console.error(`Could not find ${product.name} online`, error);
     return { status: "error", query, message: error instanceof SearchError ? error.message : "The search failed" };
@@ -70,6 +81,7 @@ export async function findForLowProducts(
   lows: LowProduct[],
   search: ProductSearch,
   limit = SEARCH_LIMIT,
+  reviewer: ListingReviewer | null = listingReviewerFromEnv(),
 ): Promise<{ results: RestockResult[]; skipped: LowProduct[] }> {
   const wanted = lows.slice(0, limit);
   const settingsFor = new Map<string, Promise<UserSettings>>();
@@ -78,10 +90,13 @@ export async function findForLowProducts(
     return settingsFor.get(userId)!;
   };
 
+  // Other names for each product, from the dictionary. Without them a search still works, just less well.
+  const dictionary = wanted.length > 0 ? await loadDictionary().catch(() => null) : null;
+
   const results: RestockResult[] = [];
   for (let start = 0; start < wanted.length; start += AT_ONCE) {
     const chunk = wanted.slice(start, start + AT_ONCE);
-    results.push(...(await Promise.all(chunk.map(async (low) => ({ low, finding: await findOnline(low, search, await settings(low.userId)) })))));
+    results.push(...(await Promise.all(chunk.map(async (low) => ({ low, finding: await findOnline(low, search, await settings(low.userId), dictionary ? wordingsFor(dictionary, low.product.name) : [], reviewer) })))));
   }
   return { results, skipped: lows.slice(limit) };
 }

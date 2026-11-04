@@ -7,7 +7,7 @@
 import { createIdentifier } from "./engine";
 import { seedData } from "./seed";
 
-export { createIdentifier, storeKey, type IdentifyContext, type Identifier } from "./engine";
+export { createIdentifier, storeKey, wordingsFor, type IdentifyContext, type Identifier } from "./engine";
 export { seedData } from "./seed";
 export { isProductCode, itemFromLookup, type CodeLookup } from "./lookup-item";
 export type { CatalogItem, DictionaryData, Identified } from "./types";

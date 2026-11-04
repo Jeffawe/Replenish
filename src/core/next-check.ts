@@ -1,5 +1,7 @@
 import type { InventoryEstimate } from "./estimate";
-import { DEFAULT_PREDICT_CONFIG, judgedDaysUntilRunOut, type PredictConfig } from "./predict";
+import { capToPack, DEFAULT_PREDICT_CONFIG, judgedDaysUntilRunOut, type PredictConfig } from "./predict";
+
+type WindowFacts = Pick<InventoryEstimate, "lowStockThresholdDays"> & Partial<Pick<InventoryEstimate, "usualPackDays" | "thresholdIsDefault">>;
 
 /**
  * When a product is next worth looking at, so a scheduled check can skip everything
@@ -12,17 +14,21 @@ import { DEFAULT_PREDICT_CONFIG, judgedDaysUntilRunOut, type PredictConfig } fro
  * recalculates the full estimate for the products it picks rather than trusting stored values.
  */
 
-type RunOutFacts = Pick<InventoryEstimate, "daysUntilRunOut" | "daysUntilRunOutRange" | "lowStockThresholdDays">;
+type RunOutFacts = Pick<InventoryEstimate, "daysUntilRunOut" | "daysUntilRunOutRange"> & WindowFacts;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * How close to running out a product must be to need attention: the low-stock threshold,
  * or the user's lead time if that is longer (an order placed then arrives just in time).
- * With the defaults (7 days and 3) this is exactly when the dashboard says "Running low".
+ * The default threshold is limited to a share of how long one usual purchase lasts, or something
+ * bought weekly would need attention the moment it was bought; a threshold the user set stands. With
+ * the defaults (7 days and 3) this is exactly when the dashboard says "Running low".
  */
-export function attentionWindowDays(estimate: Pick<InventoryEstimate, "lowStockThresholdDays">, leadDays: number): number {
-  return Math.max(estimate.lowStockThresholdDays, leadDays);
+export function attentionWindowDays(estimate: WindowFacts, leadDays: number): number {
+  const threshold = estimate.thresholdIsDefault ? capToPack(estimate.lowStockThresholdDays, estimate.usualPackDays) : estimate.lowStockThresholdDays;
+  const lead = estimate.usualPackDays ? Math.min(leadDays, estimate.usualPackDays * DEFAULT_PREDICT_CONFIG.leadMaxShareOfPack) : leadDays;
+  return Math.max(threshold, lead);
 }
 
 /** Whether the product is low enough (or close enough to running out) to find and buy or ask about. */

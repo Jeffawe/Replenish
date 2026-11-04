@@ -19,6 +19,14 @@ export interface PredictConfig {
   rate: Partial<ConsumptionRateConfig>;
   /** Used when neither the product nor the user sets a low-stock threshold. */
   defaultLowStockThresholdDays: number;
+  /**
+   * With the default threshold, "low" means within this share of one usual purchase's life. A product
+   * bought weekly isn't low the day it is bought just because the default is 7 days. A threshold the
+   * user chose is theirs and isn't limited.
+   */
+  lowStockMaxShareOfPack: number;
+  /** A lead time can't take more than this share of a purchase's life, or the product would never stop needing attention. */
+  leadMaxShareOfPack: number;
   /** Judge "low" by the earliest plausible run-out date instead of the central estimate. */
   lowStockUsesEarliestEstimate: boolean;
   /**
@@ -39,7 +47,9 @@ export interface PredictConfig {
   confidenceByIntervals: number[];
   /** Confidence when the rate comes from the user's "lasts about N days" fallback. */
   fallbackRateConfidence: number;
-  /** Confidence lost per unit of relative error: factor = 1 - penalty * relativeError. */
+  /** Relative error this small is just normal shopping (gaps varying by about +/-20%) and costs nothing. */
+  errorTolerance: number;
+  /** Confidence lost per unit of relative error beyond that: factor = 1 - penalty * (relativeError - tolerance). */
   errorPenalty: number;
   /** Multiplier applied for each interval dropped as a possible missing receipt or top-up. */
   excludedIntervalFactor: number;
@@ -66,6 +76,8 @@ export interface PredictConfig {
 export const DEFAULT_PREDICT_CONFIG: PredictConfig = {
   rate: {},
   defaultLowStockThresholdDays: 7,
+  lowStockMaxShareOfPack: 0.5,
+  leadMaxShareOfPack: 0.75,
   lowStockUsesEarliestEstimate: false,
   correctionFreshDays: 14,
   usualPurchaseWindow: 6,
@@ -73,6 +85,7 @@ export const DEFAULT_PREDICT_CONFIG: PredictConfig = {
 
   confidenceByIntervals: [0.5, 0.7, 0.85, 1],
   fallbackRateConfidence: 0.3,
+  errorTolerance: 0.05,
   errorPenalty: 2,
   excludedIntervalFactor: 0.9,
   overdueFloor: 0.2,
@@ -178,7 +191,12 @@ export function predict(
     input.userLowStockThresholdDays ??
     config.defaultLowStockThresholdDays;
 
+  const usualPackDays = ratePerDay !== null && ratePerDay > 0 ? product.normalPurchaseQty / ratePerDay : null;
+  const thresholdIsDefault = product.lowStockThresholdDays === null && input.userLowStockThresholdDays === undefined;
+
   const base = {
+    usualPackDays,
+    thresholdIsDefault,
     productId: product.id,
     unit: product.unit,
     normalPurchaseQty: product.normalPurchaseQty,
@@ -274,7 +292,7 @@ export function predict(
     daysUntilRunOutRange,
     confidence,
     confidenceFactors,
-    isLow: judgedDays <= thresholdDays,
+    isLow: judgedDays <= (thresholdIsDefault ? capToPack(thresholdDays, usualPackDays, config) : thresholdDays),
   };
 }
 
@@ -290,6 +308,15 @@ export function judgedDaysUntilRunOut(
   return config.lowStockUsesEarliestEstimate && estimate.daysUntilRunOutRange
     ? estimate.daysUntilRunOutRange.earliest
     : estimate.daysUntilRunOut;
+}
+
+/** A low-stock window limited to a share of how long one usual purchase lasts. */
+export function capToPack(
+  windowDays: number,
+  usualPackDays: number | null | undefined,
+  config: Pick<PredictConfig, "lowStockMaxShareOfPack"> = DEFAULT_PREDICT_CONFIG,
+): number {
+  return usualPackDays ? Math.min(windowDays, usualPackDays * config.lowStockMaxShareOfPack) : windowDays;
 }
 
 /** Prefers the rate learned from history, then the user's fallback. */
@@ -347,6 +374,30 @@ function findAnchor(
     };
   }
   if (!lastPurchase) return null;
+
+  // Replenish's own order arrives with stock still at home, and we already know how much: what the
+  // estimate said just before it came. This is what stops each order looking like the last one ran out.
+  if (lastPurchase.agent) {
+    const previous = findAnchor(
+      purchases.slice(0, -1),
+      corrections.filter((c) => c.recordedAt < lastPurchase.purchasedAt),
+      ratePerDay,
+      product,
+      config,
+      leftoverSource,
+    );
+    if (previous) {
+      const days = (lastPurchase.purchasedAt.getTime() - previous.at.getTime()) / DAY_MS;
+      const left = Math.max(0, previous.quantity - (ratePerDay ?? 0) * days);
+      return {
+        kind: "purchase",
+        at: lastPurchase.purchasedAt,
+        quantity: left + lastPurchase.quantity,
+        startingStock: previous.startingStock === "assumed" ? "assumed" : "known",
+        detail: "Adds the order we placed to what we estimated was left when it arrived.",
+      };
+    }
+  }
 
   // Leftover at the purchase: a recent correction before it, else the typical leftover, else 0.
   const before = [...corrections]
@@ -486,7 +537,7 @@ function buildConfidenceFactors(ctx: ConfidenceContext): ConfidenceFactor[] {
 
   // 2. How consistently the user buys (only measurable with enough intervals).
   if (source === "history" && rate.relativeError !== null) {
-    const value = clamp(1 - config.errorPenalty * rate.relativeError, 0, 1);
+    const value = clamp(1 - config.errorPenalty * Math.max(0, rate.relativeError - config.errorTolerance), 0, 1);
     factors.push(
       factor(
         "Consistency",

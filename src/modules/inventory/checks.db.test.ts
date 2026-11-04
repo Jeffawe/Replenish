@@ -205,6 +205,19 @@ describe("auto-buy switch, price range and where it was bought", () => {
     expect((await product()).autobuyEnabled).toBe(true);
   });
 
+  it("refuses to switch on when buying isn't set up, but still lets other edits and switching off through", async () => {
+    const { userId, productId, product } = await setup();
+    await confirmProduct(userId, productId);
+    expect(await saveProductEdit(userId, edit(productId, { autobuyEnabled: true }), { canEnableAutobuy: false })).toBe("autobuy-blocked");
+    expect((await product()).autobuyEnabled).toBe(false);
+
+    await saveProductEdit(userId, edit(productId, { autobuyEnabled: true }));
+    // Already on (set up before PayPal was disconnected): saving it as it is, or renaming, isn't blocked.
+    expect(await saveProductEdit(userId, edit(productId, { autobuyEnabled: true }), { canEnableAutobuy: false })).toBe("saved");
+    expect(await saveProductEdit(userId, edit(productId, { autobuyEnabled: false }), { canEnableAutobuy: false })).toBe("saved");
+    expect((await product()).autobuyEnabled).toBe(false);
+  });
+
   it("keeps the switch when the form doesn't send it, and switches off when told", async () => {
     const { userId, productId, product } = await setup();
     await confirmProduct(userId, productId);

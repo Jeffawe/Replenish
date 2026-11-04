@@ -21,9 +21,13 @@
     "low": "tsx --env-file=.env.local scripts/low-products.ts",
     "restock": "tsx --env-file=.env.local scripts/restock.ts",
     "zinc:key": "tsx scripts/zinc-sandbox-key.ts",
+    "paypal:check": "tsx --env-file=.env.local scripts/paypal-check.ts",
+    "orders": "tsx --env-file=.env.local scripts/orders.ts",
+    "ai:pick": "tsx --env-file=.env.local scripts/ai-pick.ts",
     "test:db": "DB_TESTS=1 vitest run"
   },
   "dependencies": {
+    "@google/genai": "^2.32.0",
     "@huggingface/transformers": "^4.3.2",
     "@neondatabase/serverless": "^1.2.0",
     "drizzle-orm": "^0.45.4",

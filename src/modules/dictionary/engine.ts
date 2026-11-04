@@ -119,3 +119,13 @@ export function createIdentifier(data: DictionaryData): Identifier {
     };
   };
 }
+
+/**
+ * The other names the dictionary has for an item, for recognising it in a store's listing ("bathroom
+ * tissue" for Toilet Paper). Short abbreviations from receipts ("tp", "det") are left out: they mean
+ * nothing in a listing's title, and could match the wrong thing.
+ */
+export function wordingsFor(data: Pick<DictionaryData, "terms">, itemName: string): string[] {
+  const wanted = itemName.trim().toLowerCase();
+  return data.terms.filter((term) => term.item.trim().toLowerCase() === wanted && term.text.trim().length >= 4).map((term) => term.text);
+}

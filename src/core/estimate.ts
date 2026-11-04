@@ -37,6 +37,10 @@ export interface InventoryEstimate {
   confidenceFactors: ConfidenceFactor[];
   isLow: boolean;
   lowStockThresholdDays: number;
+  /** How many days one usual purchase lasts at this rate; null with no rate. */
+  usualPackDays: number | null;
+  /** Nobody chose this threshold, so it is limited to a share of `usualPackDays`. One the user chose is left as they set it. */
+  thresholdIsDefault: boolean;
   /** The known stock level the estimate is projected from. */
   anchor: {
     kind: "purchase" | "correction";

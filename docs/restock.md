@@ -5,7 +5,7 @@ The first half of auto-buy. It answers two questions and nothing more:
 1. **Which products need attention now?** (the low-stock check)
 2. **For each one, what is the best listing to buy online?** (the finder)
 
-It **buys nothing.** Its output, a `RestockReport`, feeds two decisions: **ask the user** (built: part 3 below) and **auto-buy** (not built; [buy.ts](../src/modules/restock/buy.ts) is where it plugs in). The code is in `src/modules/restock/` (module guide: [README](../src/modules/restock/README.md)); the pick rules are pure functions in [pick-offer.ts](../src/core/pick-offer.ts).
+It **buys nothing.** Its output, a `RestockReport`, feeds two decisions: **ask the user** (part 3 below) and **buy** ("Buy for me" and auto-buy, built in [orders.md](orders.md)). The code is in `src/modules/restock/` (module guide: [README](../src/modules/restock/README.md)); the pick rules are pure functions in [pick-offer.ts](../src/core/pick-offer.ts).
 
 ```
 purchases, counts, answers, settings change
@@ -20,7 +20,7 @@ products.next_check_at ──▶ runLowStockCheck ──▶ low products + full 
                                   ▼                                                      ▼
                   1. ASK: store a suggestion, show it on the            2. AUTO-BUY (not built): product has
                      dashboard at the next login; "Buy for me"             auto-buy on, or the user pressed
-                     and "Not now"; links to the store                     "Buy for me" ──▶ startPurchase()
+                     and "Not now"; links to the store                     "Buy for me" ──▶ the orders module
 ```
 
 ## Part 1: the low-stock check
@@ -87,7 +87,7 @@ Rules only, no AI call (decided with the user). In order:
 | 1 | The whole order is inside the price range that applies | Every limit means "ask the user", so out-of-range is ranked last, not dropped |
 | 2 | The pack size fits the usual purchase | Without this the cheapest single roll, or a 48-roll bulk pack, would win |
 | 3 | A brand the product has been bought in | The user buys *this* thing again |
-| 4 | The user's usual store (`bought_from`) | A preference, not a requirement |
+| 4 | The user's usual store (`bought_from`), then their preferred stores in order (`user_settings.preferred_stores`, Settings > Auto-buy) | A preference, not a requirement |
 | 5 | Lowest price per unit | Then lowest pack price, then the link, so the same input always gives the same answer |
 
 **Department.** Channel3 gives every product a category from Google's product taxonomy. The top of it (the "department", like `Home & Garden`) is checked against the product's own category: Groceries and Beverages must be `Food, Beverages & Tobacco`; Household can be `Home & Garden`, `Hardware`, `Electronics` (batteries) or `Office Supplies`; Personal Care and Health are `Health & Beauty`; Pet is `Animals & Pet Supplies`; Baby is `Baby & Toddler` or `Health & Beauty` (table in [pick-offer.ts](../src/core/pick-offer.ts)). A category we don't list, or a listing with no category, isn't checked. This exists because a search for "Milk" returns cleansing milk, milk cartons and a perfume called Milk.
@@ -108,7 +108,7 @@ Nothing is removed for being dear or the wrong size. Instead a pick carries **co
 | `size-unknown` | The title doesn't say how many units a pack holds, so how many to order is a guess |
 | `size-differs` | The pack is much bigger or smaller than the usual purchase |
 | `other-brand` | Not a brand the product has been bought in (only when a brand is known) |
-| `other-store` | Not the store the product is usually bought from (only when one is known) |
+| `other-store` | Not a store the user asked for: not on their preferred list, and not a `bought_from` they typed. A `bought_from` that only came from a receipt ranks a listing higher but isn't a concern, because the stores we can buy from online often aren't where people shop in person |
 
 An empty list means nothing about the pick is questionable.
 
@@ -133,27 +133,39 @@ When the scheduled job finds a low product with a listing, the user is told at t
 
 > **You're running low on Toilet Paper.** We checked on 2026-11-03 and found:
 > **Charmin Essentials Toilet Paper 6 Mega Rolls** (a link) · walgreens.com · $4.99 × 2 packs = $9.98 · 6 per pack · *tags for any concerns*
-> [Open at walgreens.com] [Buy for me] [Not now]
+> [Buy for me] [I just bought this]
+> 2 other options · Wrong amount? · Not now
 > ▸ 2 other options (each a link with store, price and tags)
+
+**More than one low product:** they are shown **one at a time** (`suggestion-carousel.tsx`) with "Running low · 2 of 5" and Previous / Next buttons (they wrap round), so a long list doesn't take over the dashboard. With one suggestion there are no buttons. The list shrinks when one is dismissed or fixed, and the view stays on a suggestion that exists.
+
+**Layout:** one listing (its title links to the store) and two clear answers, **Buy for me** and **I just bought this**. Everything else (other options, a wrong estimate, not now) sits in one quiet row, so it stays visible without competing.
+
+**Buy for me** opens a second step on the card: how many packs, what it costs, and how much is held on PayPal. Each other option has **Buy this one**, which opens the same step. The browser sends only a position in the suggestion's stored list and a pack count, so it can't choose a price.
+
+**I just bought this** (`bought-it-dialog.tsx`): type how much (starts at the usual amount; a surprising number gets "are you sure?"), or **Upload a receipt instead**, which opens the ordinary receipt flow in the "+" dialog (`OPEN_RECEIPT_UPLOAD`). It is stored as a normal `manual` purchase, so the suggestion goes away once the product has stock.
+
+**Wrong amount?:** the estimate that made it "low" may be wrong, so each card has a button where the user says how much they actually have (`correction-dialog.tsx`): "I have [ ] rolls", or "None left". The estimate is worked out again, the dialog says what it is now, and the answer can be undone.
 
 - The link opens the store's page in a new tab. Only `http(s)` links are ever rendered, because the link comes from a search service.
 - **Tags** say plainly what's questionable: "Over your price limit", "Pack size not stated", "Different pack size than usual", "Different brand", "Not your usual store". A sample listing says **"Sample listing (testing data)"**.
-- **Not now** hides it until the product has stock again.
-- **Buy for me** is the second decision's entry. For now it only answers "Buying for you isn't set up yet."
+- **Not now** hides it for 3 days (`SNOOZE_DAYS`), with no searches meanwhile, and holds auto-buy for that product. If the product is still low then, it comes back.
+- Only a stock count is offered as a correction, because it is what makes the estimate change right away; the usual-usage answers only matter until purchases have taught us the real rate.
+- **Buy for me** starts an order (see [orders.md](orders.md)). With PayPal or the delivery address missing it says which, with a link to Settings.
 - Nothing shows when there is nothing to say. Products that were searched and found nothing, or where the search failed, show nothing (the dashboard's normal "Running low" card still does).
 
-**What is stored** (`restock_suggestions`, one row per product): the search's result (best listing, up to two others, the query), when it was searched, and a status, `open` or `dismissed`. The result is read back through a schema because it comes from outside; a row that doesn't parse is skipped.
+**What is stored** (`restock_suggestions`, one row per product): the search's result (best listing, up to two others, the query), when it was searched, and until when it is snoozed (`snoozed_until`). The result is read back through a schema because it comes from outside; a row that doesn't parse is skipped.
 
 **When a suggestion is shown, replaced and removed:**
 
 | | |
 |---|---|
 | **Shown** | status `open`, the product isn't hidden, and its check date has come (it still needs attention). So after the user restocks, it disappears by itself, before any job runs. |
-| **Searched again** | only when it has no suggestion, or its open suggestion is 24 hours old (`REFRESH_AFTER_MS`), so prices stay recent and a low product isn't searched on every run. A dismissed one is never searched again. |
+| **Searched again** | only when it has no suggestion, or its open suggestion is 24 hours old (`REFRESH_AFTER_MS`), so prices stay recent and a low product isn't searched on every run. A snoozed one is never searched again. |
 | **Replaced** | by the new search's best listing, on a refresh. A search that finds nothing removes the open suggestion (the listing may be gone); a failed search keeps it. |
-| **Removed** | when its product no longer needs attention (restocked, hidden). This also ends a dismissal, so the next time the product runs low the user is asked again. |
+| **Removed** | when its product no longer needs attention (restocked, hidden). This also ends a snooze, so the next time the product runs low the user is asked again. |
 
-**The first decision never buys.** "Buy for me" calls `startPurchase(userId, suggestion)` in [buy.ts](../src/modules/restock/buy.ts), which is a stub. The action reads the suggestion back from the database by id; nothing the browser sends (a link, a price) decides what is bought.
+**Asking never buys.** "Buy for me" hands the suggestion to the orders module ([orders.md](orders.md)): PayPal is charged and Zinc buys it, and the user lands on the Orders page. The action reads the suggestion back from the database by id; nothing the browser sends (a link, a price) decides what is bought. A product with an order in progress or on its way isn't suggested, searched or bought again.
 
 ## What a run returns: `RestockReport`
 
@@ -223,7 +235,7 @@ Environment: `CHANNEL3_API_KEY` (household goods), `ZINC_API_KEY` (food; `npm ru
 - **Picking is rules only.** No AI call. (Google Vision is the app's existing ML; whether that satisfies the hackathon's AI requirement is for the organizers to say.)
 - **Finding happens whether or not auto-buy is on.** Auto-buy only decides buy versus ask, and every limit falls back to asking.
 - **The hand-off is a plain-data report**, not database rows, so the next step can be built and tested on its own.
-- **Asking comes first and buys nothing.** The user sees the best listing with a link, up to two other options, "Buy for me" and "Not now". Auto-buy and "Buy for me" are the same second decision.
+- **Asking comes first and buys nothing.** The user sees the best listing with a link, up to two other options, "Buy for me", "I just bought this" and "Not now". Auto-buy and "Buy for me" are the same pipeline (orders.md).
 
 ## Known limits
 
@@ -237,7 +249,7 @@ Environment: `CHANNEL3_API_KEY` (household goods), `ZINC_API_KEY` (food; `npm ru
 
 ## What the next step must do with this
 
-- **Re-read the product and the user's settings by id** before spending anything. The report is a snapshot: a product can be edited, hidden, or have its auto-buy switched off between the search and the buy.
+- **(Done in orders.)** The orders module re-reads the product, settings, address and PayPal before spending anything: the report is a snapshot.
 - **Decide what each concern means.** At minimum, auto-buy needs: a confirmed product, auto-buy on, confidence at or above the user's floor (80% or more), `withinRange`, no `size-unknown` or `size-differs`, and the monthly cap not exceeded. Anything else means asking the user.
 - **Record what it did** so a retry can't buy twice (an idempotency key per product and low-stock cycle). The suggestions table covers asking only; it does not record purchases.
 - **Treat `sample` listings as never real:** refuse them with a live payment, and never show them as real offers.
@@ -253,8 +265,32 @@ Environment: `CHANNEL3_API_KEY` (household goods), `ZINC_API_KEY` (food; `npm ru
 | Finder | [restock/find.ts](../src/modules/restock/find.ts) |
 | The report | [restock/report.ts](../src/modules/restock/report.ts), [restock/run.ts](../src/modules/restock/run.ts) |
 | Zinc client, routing | [restock/zinc.ts](../src/modules/restock/zinc.ts), [restock/search.ts](../src/modules/restock/search.ts), [restock/search-types.ts](../src/modules/restock/search-types.ts) + tests |
-| Suggestions (storage, run, buy seam) | [restock/suggestions.ts](../src/modules/restock/suggestions.ts), [restock/ask.ts](../src/modules/restock/ask.ts), [restock/buy.ts](../src/modules/restock/buy.ts) + `suggestions.db.test.ts` |
-| Dashboard section | [src/app/restock/](../src/app/restock/) (`restock-suggestions.tsx`, `suggestion-card.tsx`, `actions.ts`) |
+| Suggestions (storage, run) | [restock/suggestions.ts](../src/modules/restock/suggestions.ts), [restock/ask.ts](../src/modules/restock/ask.ts) + `suggestions.db.test.ts` |
+| Dashboard section | [src/app/restock/](../src/app/restock/) (`restock-suggestions.tsx`, `suggestion-carousel.tsx`, `suggestion-card.tsx`, `correction-dialog.tsx`, `actions.ts`) |
 | Mock search | [restock/mock-search.ts](../src/modules/restock/mock-search.ts) |
 | Scripts, route | `scripts/low-products.ts`, `scripts/restock.ts`, `src/app/api/low-stock/check/route.ts` |
 | Database tests | `restock/check.db.test.ts`, `restock/restock.db.test.ts` (`npm run test:db`) |
+
+## Recognising the product in a listing
+
+`isSameKind` accepts a listing when every word of the product's name, **or of another name the dictionary has for it** ("bathroom tissue", "garbage bags"; `wordingsFor`, leaving out short receipt abbreviations), is in its title. It turns away a listing with an **accessory word** the product's own name doesn't use (`ACCESSORY_WORDS` in `pick-offer.ts`: holder, dispenser, frother, cabinet, maker...). Pack sizes multiply: "6 Mega Rolls (Pack of 4)" is 24, and a pack on its own says nothing for a unit that measures an amount (a "12 Pack" of milk isn't 12 gallons).
+
+## What stops a search
+
+Each search costs money, so a low product isn't searched when: it has a suggestion under 24 hours old; the last search found nothing, under 24 hours ago (`products.restock_none_found_at`); it is snoozed; an order is on its way; or it is **long overdue** (`src/core/abandoned.ts`: past its expected run-out by two of its own cycles, and at least 30 days). A long-overdue product loses its suggestion, and the questions ask "Are you still using this?" (out, how many, or stop tracking). An answer starts it again.
+
+## The AI review of listings
+
+After the rules, a language model reads the listings they accepted (`src/core/review-listings.ts`, `ai-review.ts`). The rules can't read "This Mega pack contains 6 rolls", or tell that a "Uline ... Model#" is commercial stock. It returns, for each listing, whether it is the product and how many units it holds, then the one it would buy and a sentence saying why, which the card and the order show ("Why this one: ...").
+
+**It can't spend anything the rules wouldn't.** It sees only listings the rules accepted, from stores we can order from, and answers by number. Its pack sizes go back through the same code (`offerFor`), so price and size concerns are worked out again, and auto-buy's limits run after that. A size printed in the title beats its reading, and a disagreement adds `ai-unsure`. If it is unsure or chose none, the top listing gets the `ai-unsure` concern, so auto-buy asks. If it fails, or no key is set, the rules' choice stands.
+
+**One call per search**, so at most one a day per low product. **Changing model:** `AI_MODEL` picks another Gemini model (default `gemini-3.5-flash-lite`, chosen by trying the three cheapest on real listings; `gemini-2.5-flash-lite` costs about a quarter as much but guessed pack sizes the listings did not state). `AI_PROVIDER` picks another provider: write a small file with the `JsonModel` shape (see `gemini.ts`) and add it to `PROVIDERS` in `ai-review.ts`. `AI_REVIEW=off` turns it off. `npm run ai:pick -- "Toilet Paper" --unit rolls --qty 12 --brand Charmin` shows the rules' choice beside the AI's (one Channel3 credit, one model call, stores nothing). Run against the real Gemini API on real Channel3 listings.
+
+Decided with the user: **AI is here, not on receipts or email.** A wrong receipt match is caught on the review screen and fixed once, so the rules are enough. Choosing what to buy is where judgement matters.
+
+## Stores we can order from
+
+Channel3 returns any store; Zinc can only buy from some (`GET https://api.zinc.com/retailers`). `ORDERABLE_STORES` in `pick-offer.ts` lists those that sell things that get used up: Amazon, Walmart, Lowe's, Home Depot, Ace Hardware, Best Buy, Chewy, Wayfair, Grainger, Sephora, Macy's. Target, CVS, Walgreens and Sam's Club aren't on it. A listing elsewhere gets the `not-orderable` concern and ranks last: the card shows "Open at cvs.com" instead of a buy button, auto-buy skips it, and `buyNow` refuses it. Pack sizes are read from the title, then the description.
+
+**Channel3's links won't work for a live Zinc order.** They go to `buy.trychannel3.com`, which sends the browser on with a script, and Zinc works out the store from the link. The sandbox accepts them. Before going live, a Channel3 listing needs the store's own link (ask Channel3, or look the item up on Zinc).

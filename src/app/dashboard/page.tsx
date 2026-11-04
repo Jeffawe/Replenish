@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Suspense } from "react";
 import { AddPurchases } from "./add-purchases/add-purchases";
 import { AddPurchasesPlaceholder } from "./add-purchases/add-purchases-dialog";
-import { logOutAction } from "@/app/auth/actions";
+import { OrdersLink, OrdersLinkWithBadge, SettingsLink, SignOutButton } from "./header-icons";
 import { PendingOrders } from "@/app/pending/pending-orders";
 import { Questions } from "@/app/questions/questions";
+import { OrderResults, PaymentNotice } from "@/app/orders/order-results";
 import { RestockSuggestions } from "@/app/restock/restock-suggestions";
 import { InventoryList } from "./inventory-list";
 
@@ -28,16 +28,19 @@ export default function DashboardPage() {
           <Suspense fallback={<AddPurchasesPlaceholder />}>
             <AddPurchases />
           </Suspense>
-          <Link href="/settings" className="rounded-lg px-2 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
-            Settings
-          </Link>
-          <form action={logOutAction}>
-            <button type="submit" className="rounded-lg px-2 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
-              Sign out
-            </button>
-          </form>
+          <Suspense fallback={<OrdersLink />}>
+            <OrdersLinkWithBadge />
+          </Suspense>
+          <SettingsLink />
+          <SignOutButton />
         </div>
       </header>
+      <Suspense fallback={null}>
+        <OrderResults />
+      </Suspense>
+      <Suspense fallback={null}>
+        <PaymentNotice />
+      </Suspense>
       <Suspense fallback={null}>
         <RestockSuggestions />
       </Suspense>

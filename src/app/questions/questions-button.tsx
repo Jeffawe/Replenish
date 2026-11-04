@@ -32,7 +32,7 @@ export function QuestionsButton({ questions, products, important }: { questions:
         aria-label={label}
         title={label}
         className={
-          "inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium shadow-sm " +
+          "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium shadow-sm " +
           (important
             ? "bg-rose-600 text-white hover:bg-rose-700"
             : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700")

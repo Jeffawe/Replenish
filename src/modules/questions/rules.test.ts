@@ -130,3 +130,22 @@ describe("what an answer changes", () => {
     expect(ask(fresh(), "lasts-for", "9")).toBeNull();
   });
 });
+
+describe("still using this?", () => {
+  it("asks about a confirmed product long overdue, in place of asking how much is left", () => {
+    const kinds = selectQuestions([known({ abandoned: true }, { confidence: 0.2 })], new Set(), NOW).map((q) => q.kind);
+    expect(kinds).toContain("still-using");
+    expect(kinds).not.toContain("stock-now");
+  });
+
+  it("leaves a product that isn't overdue alone", () => {
+    expect(selectQuestions([known()], new Set(), NOW).map((q) => q.kind)).not.toContain("still-using");
+  });
+
+  it("turns each answer into the right change", () => {
+    const facts = known({ abandoned: true });
+    expect(changeFor(facts, { productId: facts.id, kind: "still-using", choice: "no" }, NOW)).toEqual({ type: "archive" });
+    expect(changeFor(facts, { productId: facts.id, kind: "still-using", choice: "out" }, NOW)).toEqual({ type: "stock-count", remaining: 0 });
+    expect(changeFor(facts, { productId: facts.id, kind: "still-using", choice: "number", number: 3 }, NOW)).toEqual({ type: "stock-count", remaining: 3 });
+  });
+});

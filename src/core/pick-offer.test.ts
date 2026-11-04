@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { brandsOf, inRightDepartment, isSameKind, isStore, packSizeFrom, pickOffers, searchQueryFor, type Candidate, type Wanted } from "./pick-offer";
+import { brandsOf, inRightDepartment, isSameKind, isStore, isWantedStore, packSizeFrom, pickOffers, searchQueryFor, type Candidate, type Wanted } from "./pick-offer";
 
 const NO_LIMIT = { minCents: null, maxCents: null };
 
@@ -224,5 +224,76 @@ describe("searchQueryFor and brandsOf", () => {
   it("splits the brand list", () => {
     expect(brandsOf("Charmin, Quilted Northern")).toEqual(["Charmin", "Quilted Northern"]);
     expect(brandsOf(null)).toEqual([]);
+  });
+});
+
+describe("packSizeFrom: counts and packs multiply", () => {
+  it("multiplies a count by a pack", () => {
+    expect(packSizeFrom("Charmin Ultra Soft Toilet Paper, 6 Mega Rolls (Pack of 4)", "rolls")).toBe(24);
+    expect(packSizeFrom("Tide Pods Laundry Detergent 2 Pack, 42 Count Each", "pods")).toBe(84);
+    expect(packSizeFrom("Bounty Paper Towels, 2 Pack of 8 Rolls", "rolls")).toBe(16);
+  });
+
+  it("doesn't count the same number twice", () => {
+    expect(packSizeFrom("Toilet Paper, Pack of 12 Rolls", "rolls")).toBe(12);
+    expect(packSizeFrom("Toilet Paper 12 Pack, 12 Rolls", "rolls")).toBe(12);
+  });
+
+  it("isn't fooled by sheets, ply or ounces", () => {
+    expect(packSizeFrom("Scott 1000 Toilet Paper, 12 Rolls, 1000 Sheets per Roll", "rolls")).toBe(12);
+    expect(packSizeFrom("Scott 2 Ply Toilet Paper 12 Rolls", "rolls")).toBe(12);
+    expect(packSizeFrom("Seventh Generation Dish Soap, 19 oz, 6 Pack", "bottles")).toBe(6);
+  });
+
+  it("won't read a pack as an amount of something measured", () => {
+    expect(packSizeFrom("Whole Milk 8 oz, 12 Pack", "gallon")).toBeNull();
+    expect(packSizeFrom("Whole Milk 2 Gallons, Pack of 3", "gallons")).toBe(6);
+  });
+});
+
+describe("isSameKind: other names, and things that aren't the product", () => {
+  it("knows a product by the dictionary's other names for it", () => {
+    expect(isSameKind("Toilet Paper", "Charmin Ultra Soft Bathroom Tissue, 12 Mega Rolls")).toBe(false);
+    expect(isSameKind("Toilet Paper", "Charmin Ultra Soft Bathroom Tissue, 12 Mega Rolls", ["bath tissue", "bathroom tissue"])).toBe(true);
+    expect(isSameKind("Trash Bags", "Glad Kitchen Garbage Bags 80 Count", ["garbage bags"])).toBe(true);
+  });
+
+  it("turns away accessories for the product", () => {
+    expect(isSameKind("Toilet Paper", "Stainless Steel Toilet Paper Holder")).toBe(false);
+    expect(isSameKind("Toilet Paper", "Toilet Paper Storage Cabinet, Holds 12 Rolls")).toBe(false);
+    expect(isSameKind("Paper Towels", "Paper Towels Dispenser Wall Mount")).toBe(false);
+    expect(isSameKind("Coffee", "Coffee Maker 12 Cup")).toBe(false);
+    expect(isSameKind("Milk", "Milk Frother")).toBe(false);
+  });
+
+  it("still finds an accessory when that is the product", () => {
+    expect(isSameKind("Coffee Filters", "Melitta Coffee Filters 100 Count")).toBe(true);
+  });
+});
+
+describe("preferred stores", () => {
+  const offer = (domain: string, priceCents = 1000): Candidate => ({ id: domain, title: "Charmin Toilet Paper 12 Rolls", brands: ["Charmin"], imageUrl: null, url: `https://${domain}/x`, domain, department: null, priceCents, currency: "USD", inStock: true, condition: "new" });
+
+  it("ranks them in the user's order, ahead of a cheaper store", () => {
+    const wanted: Wanted = { ...paper, preferredStores: ["Target", "Walmart"] };
+    const picks = pickOffers([offer("amazon.com", 500), offer("walmart.com", 900), offer("target.com", 1000)], wanted);
+    expect(picks.map((pick) => pick.candidate.domain)).toEqual(["target.com", "walmart.com", "amazon.com"]);
+    expect(picks.map((pick) => pick.concerns)).toEqual([[], [], ["other-store"]]);
+  });
+
+  it("makes no concern of a store that only came from a receipt, but still ranks it first", () => {
+    const wanted: Wanted = { ...paper, store: "Walmart", storeIsGuess: true };
+    const picks = pickOffers([offer("amazon.com", 500), offer("walmart.com", 900)], wanted);
+    expect(picks[0]!.candidate.domain).toBe("walmart.com");
+    expect(picks[1]!.concerns).toEqual([]);
+  });
+
+  it("treats a store the user typed as a real preference", () => {
+    const picks = pickOffers([offer("amazon.com")], { ...paper, store: "Walmart" });
+    expect(picks[0]!.concerns).toEqual(["other-store"]);
+  });
+
+  it("isWantedStore: no preference at all means any store", () => {
+    expect(isWantedStore({ store: null, preferredStores: [] }, "amazon.com")).toBe(true);
   });
 });

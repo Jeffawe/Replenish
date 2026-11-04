@@ -127,6 +127,34 @@
       "when": 1793736500388,
       "tag": "0017_restock_suggestions",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793747353987,
+      "tag": "0018_orders_and_paypal",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793803314505,
+      "tag": "0019_paypal_suggested_address",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793808954226,
+      "tag": "0020_autobuy_safety_and_stores",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793810721105,
+      "tag": "0021_buy_confirm_and_order_fees",
+      "breakpoints": true
     }
   ]
 }

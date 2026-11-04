@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { AutobuySettingsSchema, EstimateSettingsSchema } from "./types";
+import { z } from "zod";
+import { AutobuySettingsSchema, DeliveryAddressSchema, EstimateSettingsSchema } from "./types";
 
 const parse = (fields: Record<string, string>) => AutobuySettingsSchema.safeParse(fields);
 
@@ -58,5 +59,50 @@ describe("EstimateSettingsSchema", () => {
     expect(EstimateSettingsSchema.parse({ lowStockThresholdDays: "10" })).toEqual({ lowStockThresholdDays: 10 });
     expect(EstimateSettingsSchema.parse({ lowStockThresholdDays: "" })).toEqual({ lowStockThresholdDays: null });
     expect(EstimateSettingsSchema.safeParse({ lowStockThresholdDays: "0" }).success).toBe(false);
+  });
+});
+
+describe("DeliveryAddressSchema", () => {
+  const good = { firstName: " Ada ", lastName: "Lovelace", line1: "1 Main St", line2: "", city: "Austin", state: "tx", postalCode: "78701", phone: "(512) 555-0100" };
+
+  it("cleans up a good address: trims, upper-cases the state, keeps ten phone digits", () => {
+    expect(DeliveryAddressSchema.parse(good)).toEqual({ ...good, firstName: "Ada", state: "TX", phone: "5125550100" });
+    expect(DeliveryAddressSchema.parse({ ...good, phone: "+1 512 555 0100" }).phone).toBe("5125550100");
+  });
+
+  it("ignores the extra hidden fields a submitted form carries (Next adds its own)", () => {
+    const parsed = DeliveryAddressSchema.parse({ ...good, $ACTION_ID_abc: "", $ACTION_KEY: "k1", $ACTION_REF_1: "" });
+    expect(Object.keys(parsed).sort()).toEqual(["city", "firstName", "lastName", "line1", "line2", "phone", "postalCode", "state"]);
+  });
+
+  it("says what is wrong, field by field", () => {
+    const bad = DeliveryAddressSchema.safeParse({ ...good, firstName: "", state: "Texas", postalCode: "7870", phone: "555" });
+    expect(bad.success).toBe(false);
+    if (!bad.success) {
+      const fields = Object.keys(z.flattenError(bad.error).fieldErrors).sort();
+      expect(fields).toEqual(["firstName", "phone", "postalCode", "state"]);
+    }
+  });
+
+  it("allows a ZIP+4 and leaves the second address line optional", () => {
+    const withoutLine2 = { firstName: good.firstName, lastName: good.lastName, line1: good.line1, city: good.city, state: good.state, postalCode: good.postalCode, phone: good.phone };
+    expect(DeliveryAddressSchema.parse({ ...withoutLine2, postalCode: "78701-1234" }).line2).toBe("");
+  });
+});
+
+describe("preferred stores", () => {
+  it("reads the list, tidied, with repeats dropped and order kept", () => {
+    const result = parse({ preferredStores: JSON.stringify([" Walmart ", "Target", "walmart"]) });
+    expect(result.data?.preferredStores.map((store) => store.toLowerCase())).toEqual(["walmart", "target"]);
+  });
+
+  it("means no preference when blank or unreadable", () => {
+    expect(parse({}).data?.preferredStores).toEqual([]);
+    expect(parse({ preferredStores: "" }).data?.preferredStores).toEqual([]);
+    expect(parse({ preferredStores: "not json" }).data?.preferredStores).toEqual([]);
+  });
+
+  it("refuses too many", () => {
+    expect(parse({ preferredStores: JSON.stringify(Array.from({ length: 9 }, (_, i) => `Store ${i}`)) }).success).toBe(false);
   });
 });

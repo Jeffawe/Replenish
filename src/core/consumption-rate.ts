@@ -4,6 +4,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export interface PurchasePoint {
   quantity: number;
   purchasedAt: Date;
+  /**
+   * Replenish ordered this itself. It arrives before the old stock is gone, so the gap before it
+   * says when we ordered, not how fast the product is used, and learning from that gap would make
+   * each order earlier than the last.
+   */
+  agent?: boolean;
 }
 
 /** A stock count the user gave us: "I have this much right now". */
@@ -80,6 +86,8 @@ export const DEFAULT_CONSUMPTION_RATE_CONFIG: ConsumptionRateConfig = {
 };
 
 export type ExcludedReason =
+  /** One end of this gap is an order Replenish placed, so it doesn't show how fast the product is used. */
+  | "agent-purchase"
   | "possible-missing-purchase"
   | "possible-early-purchase"
   /** A purchase interval replaced by a correction stretch covering the same days. */
@@ -153,7 +161,7 @@ export function calculateConsumptionRate(
   const levels = cleanLevels(evidence.corrections ?? [], now, config.maxAgeDays);
 
   const intervals = [
-    ...purchaseIntervals(allPurchases.slice(-config.windowPurchases)),
+    ...purchaseIntervals(allPurchases, config.windowPurchases - 1),
     ...correctionStretches(
       allPurchases,
       levels,
@@ -202,22 +210,29 @@ export function calculateConsumptionRate(
   return { ratePerDay, errorPerDay, relativeError, intervalsUsed: kept.length, intervals };
 }
 
-/** Each gap between consecutive purchases, assuming the earlier pack was used up. */
-function purchaseIntervals(points: PurchasePoint[]): IntervalObservation[] {
-  const intervals: IntervalObservation[] = [];
+/**
+ * Each gap between consecutive purchases, assuming the earlier pack was used up: the latest `keep`
+ * gaps the user's own buying made, and the latest `keep` that touch an order Replenish placed (left
+ * out of the rate, kept so the screen can say why). They are counted apart so a run of auto-buys
+ * can't push the user's own history out of the window.
+ */
+function purchaseIntervals(points: PurchasePoint[], keep: number): IntervalObservation[] {
+  const own: IntervalObservation[] = [];
+  const agent: IntervalObservation[] = [];
   for (let i = 0; i < points.length - 1; i++) {
     const days = (points[i + 1].purchasedAt.getTime() - points[i].purchasedAt.getTime()) / DAY_MS;
-    intervals.push({
+    const byAgent = Boolean(points[i].agent || points[i + 1].agent);
+    (byAgent ? agent : own).push({
       kind: "purchases",
       from: points[i].purchasedAt,
       to: points[i + 1].purchasedAt,
       days,
       consumed: points[i].quantity,
       ratePerDay: points[i].quantity / days,
-      excluded: null,
+      excluded: byAgent ? "agent-purchase" : null,
     });
   }
-  return intervals;
+  return [...own.slice(-keep), ...agent.slice(-keep)];
 }
 
 /**
@@ -350,8 +365,9 @@ export function cleanPurchases(
     const last = merged[merged.length - 1];
     if (last && p.purchasedAt.getTime() - last.purchasedAt.getTime() < mergeMs) {
       last.quantity += p.quantity;
+      last.agent = Boolean(last.agent && p.agent);
     } else {
-      merged.push({ quantity: p.quantity, purchasedAt: p.purchasedAt });
+      merged.push({ quantity: p.quantity, purchasedAt: p.purchasedAt, agent: p.agent });
     }
   }
   return merged;

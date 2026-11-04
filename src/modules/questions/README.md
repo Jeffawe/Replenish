@@ -1,6 +1,6 @@
 # Questions
 
-The app asks short, optional questions about products so its estimates get better: whether to track a product a receipt created, how much is left, how long one lasts, how much is usually left when restocking, and a second look at a stock count that looked like a typo. Answers go into the same places the estimate already reads, so `src/core/predict.ts` knows nothing about questions.
+The app asks short, optional questions about products so its estimates get better: whether to track a product a receipt created, whether they still use one long overdue, how much is left, how long one lasts, how much is usually left when restocking, and a second look at a stock count that looked like a typo. Answers go into the same places the estimate already reads, so `src/core/predict.ts` knows nothing about questions.
 
 ## The boundary
 
@@ -28,3 +28,7 @@ An answer the user gets wrong is expected. A typed stock count far above normal 
 ## Adding a kind of question
 
 Add an entry to `KINDS` in `kinds.ts` (and its name to `QuestionKind` and the action's `Kind` list), with a test in `rules.test.ts`.
+
+## Corrections (not questions)
+
+`correctStockCount(userId, productId, remaining, sure?)` in `index.ts` is the user telling us how much they actually have, for any tracked product, whether or not we would have asked. Questions only apply under conditions (no recent count, low confidence); a correction always applies. It uses the same typo check ("are you sure?") and the same stock-count undo, and returns what the estimate is now (`daysUntilRunOut`, `stillNeedsAttention`). The restock suggestions' "Wrong amount?" button uses it (`src/app/restock/correction-dialog.tsx`).

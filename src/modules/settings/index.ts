@@ -3,6 +3,6 @@
  * here; browser code imports from ./client. The rules and defaults are plain
  * functions in src/core/user-settings.ts.
  */
-export { getUserSettings, saveAutobuySettings, saveEstimateSettings, setProductAutobuy } from "./repo";
-export { AutobuySettingsSchema, EstimateSettingsSchema } from "./types";
-export type { AutobuySettingsInput, EstimateSettingsInput } from "./types";
+export { getDeliveryAddress, getUserSettings, platformLimits, saveAutobuySettings, saveDeliveryAddress, saveEstimateSettings, saveSkipBuyConfirm, setProductAutobuy } from "./repo";
+export { AutobuySettingsSchema, DeliveryAddressSchema, EstimateSettingsSchema } from "./types";
+export type { AutobuySettingsInput, DeliveryAddress, DeliveryAddressInput, EstimateSettingsInput } from "./types";

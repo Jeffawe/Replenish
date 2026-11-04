@@ -1,5 +1,8 @@
 import { DEFAULT_PREDICT_CONFIG } from "@/core/predict";
 import type { ExcludedReason } from "@/core/consumption-rate";
+import Link from "next/link";
+import { shortDate } from "@/app/orders/format";
+import type { AutoBuyTerms, OrderOnTheWay } from "@/modules/orders/client";
 import type { InventoryItem } from "@/modules/inventory/service";
 import type { InventoryEstimate } from "@/core/estimate";
 import { EditProductDialog } from "./edit-product-dialog";
@@ -37,6 +40,7 @@ const TONES: Record<Tone, { pill: string; bar: string }> = {
 };
 
 const EXCLUDED_TEXT: Record<ExcludedReason, string> = {
+  "agent-purchase": "Ignored: we ordered this one, so the gap doesn't show how fast you use it",
   "possible-missing-purchase": "Ignored: gap looks too long, maybe a missing receipt",
   "possible-early-purchase": "Ignored: bought unusually early",
   "covered-by-correction": "Replaced by your stock count",
@@ -57,6 +61,8 @@ export function InventoryCard({
   now,
   categories,
   others,
+  order,
+  autoBuyTerms,
   defaultThresholdDays = DEFAULT_PREDICT_CONFIG.defaultLowStockThresholdDays,
 }: {
   item: InventoryItem;
@@ -66,6 +72,9 @@ export function InventoryCard({
   defaultThresholdDays?: number;
   /** The user's products, to merge this one into. */
   others: { id: string; name: string; unit: string }[];
+  /** An order we are placing or that is on its way, which the estimate doesn't count until it arrives. */
+  order: OrderOnTheWay | null;
+  autoBuyTerms: AutoBuyTerms;
 }) {
   const { product, estimate } = item;
   const status = getStatus(estimate);
@@ -106,9 +115,16 @@ export function InventoryCard({
             estimatedRemaining={estimate.estimatedRemaining}
             defaultThresholdDays={defaultThresholdDays}
             categories={categories}
+            autoBuyTerms={autoBuyTerms}
           />
         </div>
       </header>
+
+      {order && (
+        <Link href="/orders" className="w-fit rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-900 hover:underline dark:bg-sky-950 dark:text-sky-200">
+          {order.status === "processing" ? "Ordering now" : order.arrivesAt ? `Ordered, arriving ${shortDate(order.arrivesAt)}` : "Ordered"}
+        </Link>
+      )}
 
       {estimate.estimatedRemaining === null || estimate.daysUntilRunOut === null ? (
         <NeedsData estimate={estimate} />

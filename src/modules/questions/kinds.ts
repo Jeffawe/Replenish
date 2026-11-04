@@ -45,6 +45,22 @@ const track: Kind = {
     answer.choice === "yes" ? { type: "confirm" } : answer.choice === "no" ? { type: "archive" } : null,
 };
 
+/** It should have run out long ago and nothing has happened since. We've stopped searching for it until they say. */
+const stillUsing: Kind = {
+  kind: "still-using",
+  applies: (facts) => facts.confirmed && facts.abandoned === true,
+  ask: (facts) => ({
+    prompt: `Are you still using ${facts.name}?`,
+    hint: "We expected it to run out a while ago and haven't seen you buy more, so we've stopped looking for it online.",
+    choices: [
+      { id: "out", label: "Yes, but I'm out" },
+      { id: "no", label: "No, stop tracking it" },
+    ],
+    numberInput: { label: "Yes, I have" },
+  }),
+  change: (_facts, answer) => (answer.choice === "out" ? { type: "stock-count", remaining: 0 } : answer.choice === "no" ? { type: "archive" } : typedCount(answer)),
+};
+
 /** A count that was far from our guess: ask once more, in case it was a typo. */
 const recheck: Kind = {
   kind: "recheck",
@@ -70,7 +86,8 @@ const stockNow: Kind = {
   kind: "stock-now",
   applies: (facts, config, now) => {
     const recent = facts.lastCountAt !== null && now.getTime() - facts.lastCountAt.getTime() < config.freshCountDays * DAY_MS;
-    return !recent && facts.estimate.purchaseCount > 0 && facts.estimate.confidence < config.askStockBelowConfidence;
+    // "Are you still using this?" comes first: a count means nothing if they've stopped.
+    return !facts.abandoned && !recent && facts.estimate.purchaseCount > 0 && facts.estimate.confidence < config.askStockBelowConfidence;
   },
   important: (facts, config) =>
     (facts.estimate.isLow || facts.estimate.estimatedRemaining === 0) &&
@@ -127,4 +144,4 @@ const leftover: Kind = {
 };
 
 /** In the order they are asked about one product. */
-export const KINDS: Kind[] = [track, recheck, stockNow, lastsFor, leftover];
+export const KINDS: Kind[] = [track, stillUsing, recheck, stockNow, lastsFor, leftover];

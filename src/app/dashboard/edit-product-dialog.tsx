@@ -1,5 +1,7 @@
 "use client";
 
+import { AutoBuyConsent } from "@/app/settings/autobuy/auto-buy-consent";
+import type { AutoBuyTerms } from "@/modules/orders/client";
 import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { normalizeProductName } from "@/core/product-name";
 import { formatQuantity } from "@/lib/format";
@@ -26,6 +28,8 @@ export interface EditableProduct {
 }
 
 interface Props {
+  /** What to show before auto-buy is switched on, and its limits. */
+  autoBuyTerms: AutoBuyTerms;
   product: EditableProduct;
   /** Our current guess, so the count question can show it. Null when we have none. */
   estimatedRemaining: number | null;
@@ -47,8 +51,10 @@ export function EditProductDialog({
   defaultThresholdDays,
   categories,
   others,
+  autoBuyTerms,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const consentRef = useRef<HTMLDialogElement>(null);
   const countRef = useRef<HTMLInputElement>(null);
   const [state, formAction, pending] = useActionState(editProductAction, IDLE);
   const [name, setName] = useState(product.name);
@@ -86,6 +92,8 @@ export function EditProductDialog({
       >
         Edit
       </button>
+
+      <AutoBuyConsent ref={consentRef} name={product.name} terms={autoBuyTerms} onConfirm={() => setAutobuy(true)} />
 
       <dialog
         ref={dialogRef}
@@ -231,7 +239,8 @@ export function EditProductDialog({
                     type="checkbox"
                     checked={autobuy && product.confirmed}
                     disabled={!product.confirmed}
-                    onChange={(event) => setAutobuy(event.target.checked)}
+                    // Turning it on spends money without asking, so they read what that means first.
+                    onChange={(event) => (event.target.checked && !product.autobuyEnabled ? consentRef.current?.showModal() : setAutobuy(event.target.checked))}
                     className="mt-0.5 size-4 shrink-0"
                   />
                   <span>
@@ -276,7 +285,7 @@ export function EditProductDialog({
                     id={`${fid("autobuyMinPrice")}-help`}
                     className={errors.autobuyMinPrice?.[0] || errors.autobuyMaxPrice?.[0] ? "text-sm text-rose-700 dark:text-rose-300" : "text-sm text-zinc-500 dark:text-zinc-400"}
                   >
-                    {errors.autobuyMinPrice?.[0] ?? errors.autobuyMaxPrice?.[0] ?? "Leave both blank to use your range from Settings. Fill in one to leave the other side open."}
+                    {errors.autobuyMinPrice?.[0] ?? errors.autobuyMaxPrice?.[0] ?? `For the whole order, with tax, shipping and fees. Leave both blank to use your range from Settings. Auto-buy can spend at most $${(autoBuyTerms.platformOrderCents / 100).toFixed(2)} on one order.`}
                   </p>
                 </div>
               </div>

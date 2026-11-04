@@ -12,6 +12,7 @@ import { isApproved } from "./approval";
 import { createSession, deleteSession, findUserBySession, SESSION_DAYS } from "./sessions";
 
 export { approvalRequired, isApproved } from "./approval";
+export { verifyWithLimit } from "./attempts";
 export {
   approveUsers,
   checkCredentials,

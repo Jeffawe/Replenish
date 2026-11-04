@@ -8,7 +8,8 @@ import { SearchError, type ProductSearch } from "./search-types";
  * order. A search costs $0.01 from the Zinc wallet; the free sandbox key (zn_test_...) returns
  * invented "Sample ..." listings, which are marked `sample` so they are never shown as real.
  *
- * Only Walmart and Amazon are searched because those are the stores Zinc lists as orderable.
+ * Only Walmart and Amazon are searched because those are the stores Zinc's search covers. Zinc can
+ * order from more (see ORDERABLE_STORES in src/core/pick-offer.ts).
  * Zinc has no zip code or store parameter, so perishables (milk, eggs) are unreliable.
  */
 

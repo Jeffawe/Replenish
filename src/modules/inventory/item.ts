@@ -21,7 +21,7 @@ export function buildItem(
   const estimate = predict({
     product,
     userLowStockThresholdDays: userLowStockThresholdDays ?? undefined,
-    purchases: purchases.map((p) => ({ quantity: p.quantity, purchasedAt: p.purchasedAt })),
+    purchases: purchases.map((p) => ({ quantity: p.quantity, purchasedAt: p.purchasedAt, agent: p.source === "agent" })),
     corrections: corrections.map((c) => ({
       remainingQuantity: c.remainingQuantity,
       recordedAt: c.recordedAt,

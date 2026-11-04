@@ -52,6 +52,18 @@ export const sessions = pgTable("sessions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// A failed sign-in, kept for a short while so password guessing can be slowed down. `key` is a hash
+// of the email, so this table can't be used to find out who has tried to sign in. Cleared on success.
+export const loginAttempts = pgTable(
+  "login_attempts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    key: text("key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("login_attempts_key_date_idx").on(t.key, t.createdAt)],
+);
+
 // One row per thing a user tracks (e.g. "Charmin Ultra Soft Toilet Paper").
 export const products = pgTable(
   "products",
@@ -100,6 +112,12 @@ export const products = pgTable(
     // scheduled check only looks at products that are due. Kept up to date by refreshNextCheck
     // whenever a purchase, count, answer or setting changes; null = nothing to wait for.
     nextCheckAt: timestamp("next_check_at", { withTimezone: true }),
+    // When a search last found nothing usable. There is no suggestion row to remember that in, and
+    // without this a product nothing is found for is searched (and paid for) on every run.
+    restockNoneFoundAt: timestamp("restock_none_found_at", { withTimezone: true }),
+    // When the low-stock check last looked at it, so a run with more due than it can take works
+    // through all of them instead of the same ones (a low product stays due until it is handled).
+    lowCheckedAt: timestamp("low_checked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -121,8 +139,96 @@ export const userSettings = pgTable("user_settings", {
   autobuyLeadDays: integer("autobuy_lead_days").notNull().default(3),
   // Null = the default in src/core/predict.ts.
   lowStockThresholdDays: integer("low_stock_threshold_days"),
+  // The stores the user wants to buy from, most wanted first. Empty = no preference.
+  preferredStores: text("preferred_stores").array().notNull().default(sql`'{}'::text[]`),
+  // "Don't show me this again" on the Buy for me confirmation. Settings > Payment & delivery turns it back on.
+  skipBuyConfirm: boolean("skip_buy_confirm").notNull().default(false),
+  // Where orders are delivered (Settings > Payment & delivery). All filled in or all empty.
+  shippingFirstName: text("shipping_first_name"),
+  shippingLastName: text("shipping_last_name"),
+  shippingLine1: text("shipping_line1"),
+  shippingLine2: text("shipping_line2"),
+  shippingCity: text("shipping_city"),
+  shippingState: text("shipping_state"),
+  shippingPostalCode: text("shipping_postal_code"),
+  shippingPhone: text("shipping_phone"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// A user's saved PayPal account, set up once so orders can be paid without them being there.
+// We keep only PayPal's reference to it (the "vault id"), never card or account details.
+// "pending": sent to PayPal to approve and not back yet (setup_token_id); "active": usable (vault_id).
+export const paypalAccounts = pgTable("paypal_accounts", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  status: text("status").notNull(),
+  setupTokenId: text("setup_token_id"),
+  vaultId: text("vault_id"),
+  payerEmail: text("payer_email"),
+  // The shipping address PayPal had on file when they connected: only fills in the delivery form for
+  // them to check. Never used to ship anything until they save it.
+  suggestedAddress: jsonb("suggested_address"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// What Replenish bought (or tried to) for a user: one row per attempt, from "Buy for me" or
+// auto-buy. Each moves through payment (PayPal) and the purchase (Zinc); see src/modules/orders.
+// status: "processing" -> "placed", "failed" or "cancelled" (the user stopped it). payment_status: "none"
+// (nothing charged), "charged", "refunded" (all of it back), "part-refunded" (the unused part of the
+// ceiling back) or "unknown" (PayPal never answered, so we can't say whether it took the money).
+// Money is in cents. `listing` and `tracking` are read back through schemas (they come from outside).
+export const orders = pgTable(
+  "orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Kept (as null) if the product is deleted, so the order history survives.
+    productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+    productName: text("product_name").notNull(),
+    // "buy-now" (the user pressed Buy for me) or "auto" (auto-buy).
+    source: text("source").notNull(),
+    status: text("status").notNull().default("processing"),
+    paymentStatus: text("payment_status").notNull().default("none"),
+    failureReason: text("failure_reason"),
+    // Why it was bought without asking, in words ("Auto-buy: 86% sure, within your price range").
+    decision: text("decision"),
+    listing: jsonb("listing").notNull(),
+    // How many packs were ordered.
+    packs: integer("packs").notNull(),
+    // The most Zinc may spend on the item, tax and shipping (its max_price).
+    ceilingCents: integer("ceiling_cents").notNull(),
+    // Zinc's fee and ours on this order, fixed when it started. Null on orders from before this was stored.
+    feesCents: integer("fees_cents"),
+    // What PayPal was charged up front: the ceiling plus Zinc's fee and ours.
+    chargedCents: integer("charged_cents"),
+    // What it really cost, once Zinc has bought it: the retailer's total plus the fees.
+    totalCents: integer("total_cents"),
+    refundedCents: integer("refunded_cents").notNull().default(0),
+    paypalOrderId: text("paypal_order_id"),
+    paypalCaptureId: text("paypal_capture_id"),
+    zincOrderId: text("zinc_order_id"),
+    merchantOrderId: text("merchant_order_id"),
+    tracking: jsonb("tracking").notNull().default(sql`'[]'::jsonb`),
+    arrivesAt: timestamp("arrives_at", { withTimezone: true }),
+    // The order was recorded as a purchase. Until then it is retried, and the product isn't bought again.
+    purchaseRecordedAt: timestamp("purchase_recorded_at", { withTimezone: true }),
+    // When Zinc was last asked about the parcel, so tracking is checked every few hours, not on every poll.
+    trackingCheckedAt: timestamp("tracking_checked_at", { withTimezone: true }),
+    // When the user saw how it turned out; null means "tell them next time they open the app".
+    seenAt: timestamp("seen_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("orders_user_idx").on(t.userId, t.createdAt),
+    // One order in flight per product, so pressing Buy twice (or auto-buy racing a click) can't buy twice.
+    uniqueIndex("orders_one_processing_idx").on(t.productId).where(sql`${t.status} = 'processing'`),
+  ],
+);
 
 // A wording a receipt or email used for a product ("gv whl mlk gl" for Whole
 // Milk), learned when the user confirms a match, so the next one needs no help.
@@ -275,7 +381,7 @@ export const inventoryCorrections = pgTable(
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
     note: text("note"),
   },
-  (t) => [index("inventory_corrections_product_date_idx").on(t.productId, t.recordedAt)],
+  (t) => [index("inventory_corrections_product_date_idx").on(t.productId, t.recordedAt), index("inventory_corrections_user_idx").on(t.userId)],
 );
 
 // "Not now" on a question: that kind of question about that product stays
@@ -400,7 +506,7 @@ export const codeLookups = pgTable(
 // What the restock check found for a low product, kept so the user can be asked about it the next
 // time they log in (src/modules/restock). One row per product: `found` is the search's result
 // (the best listing and up to two others), read back through a schema because it comes from outside.
-// "open" = show it; "dismissed" = the user said not now, until the product has stock again.
+// `snoozed_until`: the user said "not now", so it isn't shown or bought until then.
 export const restockSuggestions = pgTable(
   "restock_suggestions",
   {
@@ -414,6 +520,7 @@ export const restockSuggestions = pgTable(
     status: text("status").notNull().default("open"),
     found: jsonb("found").notNull(),
     searchedAt: timestamp("searched_at", { withTimezone: true }).notNull(),
+    snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -430,3 +537,5 @@ export type InventoryCorrection = typeof inventoryCorrections.$inferSelect;
 export type NewInventoryCorrection = typeof inventoryCorrections.$inferInsert;
 export type QuestionSnooze = typeof questionSnoozes.$inferSelect;
 export type RestockSuggestionRow = typeof restockSuggestions.$inferSelect;
+export type OrderRow = typeof orders.$inferSelect;
+export type PaypalAccountRow = typeof paypalAccounts.$inferSelect;

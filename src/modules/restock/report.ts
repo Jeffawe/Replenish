@@ -38,7 +38,7 @@ export interface RestockListing {
 
 /** What the search found for a product. */
 export type RestockOutcome =
-  | { status: "found"; pick: RestockListing; alternatives: RestockListing[] }
+  | { status: "found"; pick: RestockListing; alternatives: RestockListing[]; reason: string | null }
   /** "no-results": nothing came back. "no-usable-listing": listings came back, but none in stock, new and the same kind of thing. */
   | { status: "none"; reason: "no-results" | "no-usable-listing" }
   | { status: "error"; message: string };
@@ -104,7 +104,7 @@ function toListing(offer: PickedOffer): RestockListing {
 }
 
 function outcomeOf(finding: Finding): RestockOutcome {
-  if (finding.status === "found") return { status: "found", pick: toListing(finding.pick), alternatives: finding.alternatives.map(toListing) };
+  if (finding.status === "found") return { status: "found", pick: toListing(finding.pick), alternatives: finding.alternatives.map(toListing), reason: finding.reason };
   if (finding.status === "none") return { status: "none", reason: finding.reason };
   return { status: "error", message: finding.message };
 }

@@ -1,7 +1,9 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { cache } from "react";
 import { db } from "@/db/client";
 import {
   inventoryCorrections,
+  orders,
   productAliases,
   products,
   purchaseEvents,
@@ -24,6 +26,12 @@ import { refreshNextCheck } from "./next-check";
 import { normalizeBrands, type ProductEdit } from "./types";
 
 export type { InventoryItem } from "./item";
+
+/**
+ * The inventory for one page render: the dashboard's question button and product list both need it,
+ * and this reads it once. Only for pages. A server action that writes and reads back wants getInventory.
+ */
+export const getInventoryForPage = cache((userId: string) => getInventory(userId));
 
 /**
  * Every product the user tracks with its current estimate, most urgent first.
@@ -65,14 +73,18 @@ export async function getInventory(userId: string, now?: Date): Promise<Inventor
  * Saves the product's details and any answers from the edit form together.
  * A stock count is recorded as a correction, stamped with what we predicted
  * just before it so past accuracy can be measured. Unchanged settings are
- * rewritten as-is; blank answers clear them.
+ * rewritten as-is; blank answers clear them. With `canEnableAutobuy: false`, switching auto-buy on for
+ * a product that doesn't have it is refused ("autobuy-blocked") and nothing is saved; leaving it as it
+ * is, or switching it off, still works.
  */
 export async function saveProductEdit(
   userId: string,
   edit: ProductEdit,
-): Promise<"saved" | "not-found" | { nameTakenBy: string }> {
+  options: { canEnableAutobuy?: boolean } = {},
+): Promise<"saved" | "not-found" | "autobuy-blocked" | { nameTakenBy: string }> {
   const product = await getProduct(userId, edit.productId);
   if (!product) return "not-found";
+  if (options.canEnableAutobuy === false && edit.autobuyEnabled && !product.autobuyEnabled && product.confirmedAt !== null) return "autobuy-blocked";
 
   // Renaming: the new name must be free, and the old one is kept as an alias so receipts that used it still match.
   const normalizedName = normalizeProductName(edit.name);
@@ -199,6 +211,18 @@ export async function mergeProducts(
     db.update(purchaseEvents).set({ productId: into.id, unit: into.unit }).where(and(eq(purchaseEvents.userId, userId), eq(purchaseEvents.productId, from.id))),
     db.update(inventoryCorrections).set({ productId: into.id }).where(and(eq(inventoryCorrections.userId, userId), eq(inventoryCorrections.productId, from.id))),
     db.update(productAliases).set({ productId: into.id }).where(and(eq(productAliases.userId, userId), eq(productAliases.productId, from.id))),
+    // Its orders follow it, so one on its way still stops the kept product being bought again. Only
+    // one order can be in progress per product, so if both have one, the merged product's keeps its history and goes on without a product.
+    db
+      .update(orders)
+      .set({ productId: into.id })
+      .where(
+        and(
+          eq(orders.userId, userId),
+          eq(orders.productId, from.id),
+          sql`not (${orders.status} = 'processing' and exists (select 1 from ${orders} as other where other.product_id = ${into.id} and other.status = 'processing'))`,
+        ),
+      ),
     db
       .insert(productAliases)
       .values({ userId, productId: into.id, alias: from.normalizedName })

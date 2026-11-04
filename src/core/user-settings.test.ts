@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   clampConfidence,
+  DEFAULT_PLATFORM_LIMITS,
   DEFAULT_USER_SETTINGS,
+  effectiveLimit,
+  platformLimitsFrom,
   dollarsToCents,
   MIN_AUTOBUY_CONFIDENCE,
   priceRangeFor,
@@ -66,5 +69,31 @@ describe("dollarsToCents", () => {
     expect(dollarsToCents(12.5)).toBe(1250);
     expect(dollarsToCents(0.29)).toBe(29);
     expect(dollarsToCents(4.35)).toBe(435); // 4.35 * 100 is 434.99999999999994 in floating point
+  });
+});
+
+describe("platform limits", () => {
+  it("defaults, and takes the owner's dollars from the environment", () => {
+    expect(platformLimitsFrom({})).toEqual(DEFAULT_PLATFORM_LIMITS);
+    expect(platformLimitsFrom({ order: "75", month: "300.50", buyNowOrder: "90" })).toMatchObject({ orderCents: 7500, monthCents: 30050, buyNowOrderCents: 9000 });
+  });
+
+  it("works out the limit across all users from how many are planned", () => {
+    expect(platformLimitsFrom({})).toMatchObject({ plannedUsers: 100, allUsersMonthCents: 2_000_000 });
+    expect(platformLimitsFrom({ plannedUsers: "250" })).toMatchObject({ plannedUsers: 250, allUsersMonthCents: 5_000_000 });
+    expect(platformLimitsFrom({ plannedUsers: "10", month: "50" })).toMatchObject({ plannedUsers: 10, allUsersMonthCents: 50_000 });
+  });
+
+  it("ignores nonsense", () => {
+    expect(platformLimitsFrom({ plannedUsers: "many" })).toEqual(DEFAULT_PLATFORM_LIMITS);
+    expect(platformLimitsFrom({ plannedUsers: "0.5" })).toEqual(DEFAULT_PLATFORM_LIMITS);
+    expect(platformLimitsFrom({ order: "lots", month: "-5" })).toEqual(DEFAULT_PLATFORM_LIMITS);
+    expect(platformLimitsFrom({ order: " ", month: "0" })).toEqual(DEFAULT_PLATFORM_LIMITS);
+  });
+
+  it("holds a user's limit to ours", () => {
+    expect(effectiveLimit(null, 5000)).toBe(5000);
+    expect(effectiveLimit(2000, 5000)).toBe(2000);
+    expect(effectiveLimit(9000, 5000)).toBe(5000);
   });
 });

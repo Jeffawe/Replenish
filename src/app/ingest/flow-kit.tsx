@@ -27,6 +27,9 @@ export interface FlowProps {
 
 export type Flow = ComponentType<FlowProps>;
 
+/** Anything on the dashboard can send the user to the receipt upload by firing this (the "+" dialog listens). */
+export const OPEN_RECEIPT_UPLOAD = "replenish:open-receipt-upload";
+
 export const PRIMARY = "rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background disabled:opacity-60";
 export const SECONDARY = "rounded-lg border border-zinc-300 px-4 py-2 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800";
 export const CHOICE =

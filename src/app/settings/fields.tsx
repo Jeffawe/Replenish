@@ -10,11 +10,16 @@ export function Suffix({ children }: { children: ReactNode }) {
 }
 
 /** A labelled input with a hint, or the error in its place. The input needs `id` and `aria-describedby={`${id}-help`}`. */
-export function Field({ label, id, hint, error, children }: { label: string; id: string; hint?: string; error?: string; children: ReactNode }) {
+export function Field({ label, id, hint, error, required, children }: { label: string; id: string; hint?: string; error?: string; required?: boolean; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm font-medium">
         {label}
+        {required && (
+          <span aria-hidden className="ml-0.5 text-rose-600 dark:text-rose-400">
+            *
+          </span>
+        )}
       </label>
       {children}
       {(error || hint) && (

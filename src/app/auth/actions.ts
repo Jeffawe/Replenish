@@ -10,6 +10,7 @@ import {
   isApproved,
   PasswordSchema,
   startSession,
+  verifyWithLimit,
 } from "@/modules/auth";
 
 export type AuthState = { error?: string; fieldErrors?: { email?: string; password?: string }; email?: string };
@@ -43,7 +44,15 @@ export async function signUpAction(_previous: AuthState, formData: FormData): Pr
 
 export async function logInAction(_previous: AuthState, formData: FormData): Promise<AuthState> {
   const parsed = LoginSchema.safeParse(Object.fromEntries(formData));
-  const user = parsed.success ? await checkCredentials(parsed.data.email, parsed.data.password) : null;
+  const found: { user: Awaited<ReturnType<typeof checkCredentials>> } = { user: null };
+  if (parsed.success) {
+    const verdict = await verifyWithLimit(parsed.data.email, async () => {
+      found.user = await checkCredentials(parsed.data.email, parsed.data.password);
+      return found.user !== null;
+    });
+    if (verdict === "locked") return { email: typedEmail(formData), error: "Too many tries. Please wait 15 minutes and try again." };
+  }
+  const { user } = found;
   if (!user) return { email: typedEmail(formData), error: "That email and password don't match an account." };
   await startSession(user.id);
   redirect(isApproved(user) ? "/dashboard" : "/pending");

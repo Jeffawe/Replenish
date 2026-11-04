@@ -13,7 +13,7 @@ import type { InventoryEstimate } from "@/core/estimate";
  * so one disappears as soon as the data answers it.
  */
 
-export type QuestionKind = "track" | "recheck" | "stock-now" | "lasts-for" | "leftover";
+export type QuestionKind = "track" | "still-using" | "recheck" | "stock-now" | "lasts-for" | "leftover";
 
 /** What one product looks like to the questions. */
 export interface ProductFacts {
@@ -32,6 +32,8 @@ export interface ProductFacts {
   >;
   /** When the user last gave a stock count, if ever. */
   lastCountAt: Date | null;
+  /** We expected it to run out long ago and nothing has happened since (src/core/abandoned.ts). */
+  abandoned?: boolean;
 }
 
 export interface Choice {

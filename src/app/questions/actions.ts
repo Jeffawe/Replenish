@@ -7,7 +7,7 @@ import { answerQuestion, snoozeQuestion, undoAnswer, type AnswerOutcome } from "
 
 /** The questions' three actions: answer one, take an answer back, and "not now". Each refreshes the dashboard. */
 
-const Kind = z.enum(["track", "recheck", "stock-now", "lasts-for", "leftover"]);
+const Kind = z.enum(["track", "still-using", "recheck", "stock-now", "lasts-for", "leftover"]);
 
 const AnswerSchema = z.object({
   productId: z.uuid(),

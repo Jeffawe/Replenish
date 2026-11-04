@@ -4,13 +4,18 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireUser } from "@/modules/auth";
 import { refreshNextCheck } from "@/modules/inventory/next-check";
+import { autoBuySetupProblem } from "@/modules/orders";
 import {
   AutobuySettingsSchema,
   EstimateSettingsSchema,
+  platformLimits,
   saveAutobuySettings,
   saveEstimateSettings,
+  saveSkipBuyConfirm,
   setProductAutobuy,
 } from "@/modules/settings";
+
+const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 export type SettingsFormState = {
   status: "idle" | "saved" | "error";
@@ -27,6 +32,13 @@ export async function saveAutobuySettingsAction(_previous: SettingsFormState, fo
   if (!parsed.success) {
     return { status: "error", message: "Some answers need a look.", fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
+  // Users can lower our limits, never raise them.
+  const limits = platformLimits();
+  const fieldErrors = {
+    ...(parsed.data.autobuyMaxPriceCents !== null && parsed.data.autobuyMaxPriceCents > limits.orderCents ? { maxPrice: [`The most auto-buy can spend on one order is ${dollars(limits.orderCents)}.`] } : {}),
+    ...(parsed.data.autobuyMonthlyCapCents !== null && parsed.data.autobuyMonthlyCapCents > limits.monthCents ? { monthlyCap: [`The most auto-buy can spend in a month is ${dollars(limits.monthCents)}.`] } : {}),
+  };
+  if (Object.keys(fieldErrors).length > 0) return { status: "error", message: "Some answers need a look.", fieldErrors };
   await saveAutobuySettings(user.id, parsed.data);
   // The lead time decides when each of the user's products next needs checking.
   await refreshNextCheck(user.id);
@@ -57,10 +69,25 @@ export async function setProductAutobuyAction(productId: unknown, enabled: unkno
   const parsed = z.object({ productId: z.uuid(), enabled: z.boolean() }).safeParse({ productId, enabled });
   if (!parsed.success) return { status: "error", message: "That didn't work. Please try again." };
 
+  // Switching it off is always allowed; switching it on needs PayPal and an address to buy with.
+  if (parsed.data.enabled) {
+    const problem = await autoBuySetupProblem(user.id);
+    if (problem) return { status: "error", message: problem };
+  }
   const result = await setProductAutobuy(user.id, parsed.data.productId, parsed.data.enabled);
   if (result === "not-found") return { status: "error", message: "That product no longer exists." };
   if (result === "unconfirmed") return { status: "error", message: "Confirm you keep track of this product first." };
   revalidatePath("/settings/autobuy");
   revalidatePath("/dashboard");
   return { status: "saved" };
+}
+
+/** "Don't show me this again" on Buy for me, and the switch in Settings that turns it back on. */
+export async function setSkipBuyConfirmAction(skip: unknown): Promise<void> {
+  const user = await requireUser();
+  const parsed = z.boolean().safeParse(skip);
+  if (!parsed.success) return;
+  await saveSkipBuyConfirm(user.id, parsed.data);
+  revalidatePath("/dashboard");
+  revalidatePath("/settings/payment");
 }

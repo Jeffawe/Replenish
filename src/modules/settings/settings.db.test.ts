@@ -56,6 +56,8 @@ describe("user settings", () => {
       autobuyMonthlyCapCents: 15000,
       autobuyLeadDays: 5,
       lowStockThresholdDays: null,
+      preferredStores: [],
+      skipBuyConfirm: false,
     });
   });
 

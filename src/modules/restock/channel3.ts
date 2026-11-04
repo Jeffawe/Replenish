@@ -27,6 +27,9 @@ const ProductSchema = z.object({
   images: z.array(z.object({ url: z.string(), is_main_image: z.boolean().nullish() })).nullish(),
   // path runs from the top department down: [{title: "Home & Garden"}, {title: "Household Supplies"}, ...]
   category: z.object({ title: z.string(), path: z.array(z.object({ title: z.string() })).nullish() }).nullish(),
+  // Titles often say only "Toilet Paper"; the pack size is usually in here ("This Mega pack contains 6 rolls").
+  description: z.string().nullish(),
+  key_features: z.array(z.string()).nullish(),
   offers: z.array(z.unknown()),
 });
 // Products and offers are read one at a time, so one odd listing is skipped instead of failing the search.
@@ -39,7 +42,7 @@ export function toCandidates(body: unknown): Candidate[] {
   return response.data.products.flatMap((raw) => {
     const product = ProductSchema.safeParse(raw);
     if (!product.success) return [];
-    const { id, title, brands, images, category, offers } = product.data;
+    const { id, title, brands, images, category, description, key_features, offers } = product.data;
     const department = category?.path?.[0]?.title ?? category?.title ?? null;
     const image = images?.find((entry) => entry.is_main_image) ?? images?.[0];
     return offers.flatMap((rawOffer): Candidate[] => {
@@ -58,6 +61,8 @@ export function toCandidates(body: unknown): Candidate[] {
           currency: offer.data.price.currency,
           inStock: offer.data.availability === "InStock",
           condition: offer.data.condition ?? null,
+          ...(description ? { description } : {}),
+          ...(key_features?.length ? { features: key_features } : {}),
         },
       ];
     });

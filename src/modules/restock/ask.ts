@@ -1,8 +1,9 @@
+import { isAbandoned } from "@/core/abandoned";
 import { runLowStockCheck, type CheckOptions } from "./check";
 import { findForLowProducts } from "./find";
 import { toRestockItem, type RestockReport } from "./report";
 import type { ProductSearch } from "./search-types";
-import { existingSuggestions, forgetStaleSuggestions, saveFindings } from "./suggestions";
+import { dropSuggestions, existingSuggestions, forgetStaleSuggestions, productsWithActiveOrder, saveFindings } from "./suggestions";
 
 /** A stored suggestion is searched again after this long, so its price and stock stay recent. */
 export const REFRESH_AFTER_MS = 24 * 60 * 60 * 1000;
@@ -14,8 +15,10 @@ export interface AskReport extends RestockReport {
   cleared: number;
   /** Suggestions removed because the product no longer needs attention. */
   forgotten: number;
-  /** Low products not searched because they already have a recent suggestion (or the user said not now). */
+  /** Low products not searched because they already have a recent suggestion, the user said not now, or they are already ordered. */
   alreadyAsked: number;
+  /** Low products we've stopped searching for, because they should have run out long ago: the user is asked if they still use them. */
+  abandoned: number;
 }
 
 /**
@@ -31,11 +34,26 @@ export async function runRestockAndAsk(search: ProductSearch, options: CheckOpti
   // After the check, which moves forward the date of anything that turned out not to be low.
   const forgotten = await forgetStaleSuggestions(now, options.userId);
 
-  const existing = await existingSuggestions(check.low.map((low) => low.product.id));
+  const ids = check.low.map((low) => low.product.id);
+  const [existing, ordered] = await Promise.all([existingSuggestions(ids), productsWithActiveOrder(ids, now)]);
+  const recently = (at: Date | null | undefined) => at != null && now.getTime() - at.getTime() < REFRESH_AFTER_MS;
+
+  // Long overdue: stop paying to search, and take down what we were showing. The questions ask about it instead.
+  const abandoned = check.low.filter((low) => isAbandoned(low.estimate, now));
+  await dropSuggestions(abandoned.map((low) => low.product.id));
+  const givenUp = new Set(abandoned.map((low) => low.product.id));
+
   const toSearch = check.low.filter((low) => {
+    if (givenUp.has(low.product.id)) return false;
+    // Already ordered (in progress or on its way): nothing to find.
+    if (ordered.has(low.product.id)) return false;
+    // Nothing was found a moment ago: another search would cost a credit to find the same nothing.
+    if (recently(low.product.restockNoneFoundAt)) return false;
     const stored = existing.get(low.product.id);
     if (!stored) return true;
-    return stored.status === "open" && now.getTime() - stored.searchedAt.getTime() >= REFRESH_AFTER_MS;
+    // "Not now": don't spend a search on something the user isn't looking at.
+    if (stored.snoozedUntil && stored.snoozedUntil > now) return false;
+    return !recently(stored.searchedAt);
   });
 
   const { results, skipped } = await findForLowProducts(toSearch, search, limit);
@@ -52,6 +70,7 @@ export async function runRestockAndAsk(search: ProductSearch, options: CheckOpti
     saved,
     cleared,
     forgotten,
-    alreadyAsked: check.low.length - toSearch.length,
+    alreadyAsked: check.low.length - toSearch.length - abandoned.length,
+    abandoned: abandoned.length,
   };
 }

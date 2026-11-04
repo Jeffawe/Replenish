@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { CHOICE, FlowHeader, PRIMARY, SECONDARY, type Flow, type ProductOption } from "@/app/ingest/flow-kit";
+import { useEffect, useRef, useState } from "react";
+import { CHOICE, FlowHeader, OPEN_RECEIPT_UPLOAD, PRIMARY, SECONDARY, type Flow, type ProductOption } from "@/app/ingest/flow-kit";
 import { EmailFlow } from "@/app/ingest/email/email-flow";
 import { ManualFlow } from "@/app/ingest/manual/manual-flow";
 import { ReceiptFlow } from "@/app/ingest/receipt/receipt-flow";
@@ -23,11 +23,11 @@ type View =
   | { name: "done"; headline: string; details: string[] };
 
 const PLUS_BUTTON =
-  "inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background shadow-sm hover:opacity-90";
+  "inline-flex size-12 shrink-0 items-center justify-center rounded-full bg-foreground text-background shadow-sm hover:opacity-90";
 
 function PlusIcon() {
   return (
-    <svg aria-hidden viewBox="0 0 20 20" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <svg aria-hidden viewBox="0 0 20 20" className="size-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
       <path d="M10 4v12M4 10h12" />
     </svg>
   );
@@ -47,6 +47,16 @@ export function AddPurchasesDialog({ products }: { products: ProductOption[] }) 
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [view, setView] = useState<View>({ name: "menu" });
   const close = () => dialogRef.current?.close();
+
+  // "Upload a receipt" from elsewhere on the page: the same flow as choosing Receipt here.
+  useEffect(() => {
+    const openReceipt = () => {
+      setView({ name: "flow", flow: ReceiptFlow });
+      dialogRef.current?.showModal();
+    };
+    window.addEventListener(OPEN_RECEIPT_UPLOAD, openReceipt);
+    return () => window.removeEventListener(OPEN_RECEIPT_UPLOAD, openReceipt);
+  }, []);
 
   return (
     <>

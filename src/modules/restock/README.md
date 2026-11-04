@@ -7,7 +7,7 @@ Finds the products that are running low and looks each one up online. Two parts,
 1. **The low-stock check** (`check.ts`): which products need attention now.
 2. **The finder** (`find.ts`, `channel3.ts`): for each low product, the best listing to buy.
 
-Two decisions follow them. **Ask** (built): `ask.ts` stores what was found as a *suggestion* (`suggestions.ts`, table `restock_suggestions`) and the dashboard section in `src/app/restock/` shows it at the next login, with a link, two other options, "Buy for me" and "Not now". **Buy** (not built): `buy.ts` is the stub both auto-buy and "Buy for me" will go through. Nothing in this module buys.
+Two decisions follow them. **Ask** (built): `ask.ts` stores what was found as a *suggestion* (`suggestions.ts`, table `restock_suggestions`) and the dashboard section in `src/app/restock/` shows it at the next login, with a link, two other options, "Buy for me" and "Not now". **Buy** is the orders module (`src/modules/orders/`, docs/orders.md): both "Buy for me" and auto-buy go through it. Nothing in this module buys.
 
 Doors: `index.ts` (server) and `client.ts` (browser: the `Suggestion` type and the labels for concerns).
 
@@ -64,5 +64,9 @@ The same report comes from the cron route: `GET /api/low-stock/check?find=1` (ad
 
 - **Groceries are not in Channel3** (checked live), so food goes to Zinc. Zinc's real food results are untested (the sandbox returns invented samples) and it can't target a local store, so perishables should be ask-only. See docs/restock.md.
 - **"Same kind of thing" is word matching**, so "Milk" also accepts "Milk Chocolate Bar" (the brand and size rules usually push it down). Better matching is a dictionary job, not a bigger word list here.
-- **Only found listings are stored**, and reused for 24 hours; see "Part 3" in docs/restock.md. Auto-buy and "Buy for me" are not built (`buy.ts` is the stub).
+- **Only found listings are stored**, and reused for 24 hours; see "Part 3" in docs/restock.md. Buying is in the orders module; a product with an order in progress or on its way is skipped here.
 - **Whether the store can be bought from automatically** is the buying step's question; the finder only reports the store's domain.
+
+"Not now" is a 3-day snooze (`snoozeSuggestion`), and it holds auto-buy too. A search that finds nothing isn't repeated for 24 hours, and a long-overdue product isn't searched at all (`src/core/abandoned.ts`). See docs/restock.md for matching, synonyms and accessory words.
+
+**AI review:** `ai-review.ts` (the `JsonModel` interface and `PROVIDERS`), `gemini.ts`, and the pure `src/core/review-listings.ts`. Set `GEMINI_API_KEY`; `AI_PROVIDER`, `AI_MODEL` and `AI_REVIEW=off` change it. Without a key the rules choose alone. See docs/restock.md.

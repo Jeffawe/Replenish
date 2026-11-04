@@ -38,7 +38,11 @@ export async function evaluateProducts(userId: string, rows: Product[], at: Date
 
   const group = <T extends { productId: string }>(list: T[]) => {
     const byProduct = new Map<string, T[]>();
-    for (const entry of list) byProduct.set(entry.productId, [...(byProduct.get(entry.productId) ?? []), entry]);
+    for (const entry of list) {
+      const own = byProduct.get(entry.productId);
+      if (own) own.push(entry);
+      else byProduct.set(entry.productId, [entry]);
+    }
     return byProduct;
   };
   const purchasesBy = group(purchases);

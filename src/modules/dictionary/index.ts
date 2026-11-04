@@ -38,6 +38,7 @@ export type { Observation } from "./learn";
 const lookup = createLookup({ cache: lookupCache });
 export const lookupProductCodes: typeof lookup = (codes) => (process.env.LOOKUP === "off" ? Promise.resolve(new Map()) : lookup(codes));
 export { normalizeWording } from "./learn";
+export { wordingsFor } from "./engine";
 
 /** Something a person asked for that can't be done, with a message that says why. */
 export class DictionaryError extends Error {

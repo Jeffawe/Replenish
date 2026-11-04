@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, lte } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import type { InventoryEstimate } from "@/core/estimate";
 import { db } from "@/db/client";
 import { products, type Product } from "@/db/schema";
@@ -79,13 +79,18 @@ export async function runLowStockCheck({ now, userId }: CheckOptions = {}, limit
     .select()
     .from(products)
     .where(and(lte(products.nextCheckAt, at), isNull(products.archivedAt), userId ? eq(products.userId, userId) : undefined))
-    .orderBy(asc(products.nextCheckAt))
+    // Longest since last looked at first: low products stay due, and must not crowd out the rest.
+    .orderBy(sql`${products.lowCheckedAt} asc nulls first`, products.nextCheckAt)
     .limit(limit + 1);
   const moreDue = due.length > limit;
   const batch = due.slice(0, limit);
 
   const byUser = new Map<string, Product[]>();
-  for (const product of batch) byUser.set(product.userId, [...(byUser.get(product.userId) ?? []), product]);
+  for (const product of batch) {
+    const own = byUser.get(product.userId);
+    if (own) own.push(product);
+    else byUser.set(product.userId, [product]);
+  }
 
   const low: LowProduct[] = [];
   const later: Evaluated[] = [];
@@ -102,6 +107,7 @@ export async function runLowStockCheck({ now, userId }: CheckOptions = {}, limit
     }
   }
   await saveNextCheckDates(later);
+  if (batch.length > 0) await db.update(products).set({ lowCheckedAt: at }).where(inArray(products.id, batch.map((product) => product.id)));
 
   low.sort((a, b) => (a.estimate.daysUntilRunOut ?? Infinity) - (b.estimate.daysUntilRunOut ?? Infinity));
   return { checkedAt: at, checked: batch.length, low, moreDue, errors };

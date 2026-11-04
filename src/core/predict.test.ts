@@ -327,3 +327,51 @@ describe("predict: learning how much is left when buying", () => {
     expect(run(60, steady, { corrections: [correction(10, 3)] }).typicalLeftover.source).toBe("none");
   });
 });
+
+describe("predict: orders Replenish placed itself", () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const start = new Date("2026-01-01T12:00:00Z").getTime();
+  const at = (day: number) => new Date(start + day * DAY_MS);
+  const product = { id: "p", unit: "rolls", normalPurchaseQty: 12, fallbackDaysPerPurchase: null, lowStockThresholdDays: null, typicalLeftoverAtPurchase: null };
+  const own = (day: number) => ({ quantity: 12, purchasedAt: at(day) });
+  const agent = (day: number) => ({ ...own(day), agent: true });
+  const history = [own(0), own(28), own(56), own(84), own(112)];
+
+  it("doesn't learn a faster rate from an order that arrived early", () => {
+    const before = predict({ product, purchases: history, corrections: [], now: at(135) });
+    const after = predict({ product, purchases: [...history, agent(135)], corrections: [], now: at(136) });
+    expect(after.consumptionPerDay).toBeCloseTo(before.consumptionPerDay!, 6);
+    expect(after.rate.intervals.some((interval) => interval.excluded === "agent-purchase")).toBe(true);
+  });
+
+  it("adds an order that arrives to what was still left", () => {
+    // Bought 12 at day 112, used 1 every 2.33 days: about 2 left at day 135 when 12 more arrive.
+    const after = predict({ product, purchases: [...history, agent(135)], corrections: [], now: at(135) });
+    expect(after.anchor!.quantity).toBeGreaterThan(13);
+    expect(after.anchor!.quantity).toBeLessThan(15);
+  });
+
+  it("carries the leftover through several orders in a row, from the last thing we really knew", () => {
+    const after = predict({ product, purchases: [...history, agent(135), agent(161), agent(187)], corrections: [], now: at(187) });
+    expect(after.consumptionPerDay).toBeCloseTo(12 / 28, 1);
+    expect(after.anchor!.quantity).toBeGreaterThan(15);
+  });
+
+  it("starts from a stock count given before the order arrived", () => {
+    const after = predict({ product, purchases: [...history, agent(135)], corrections: [{ remainingQuantity: 5, recordedAt: at(134), estimatedAtTime: 3 }], now: at(135) });
+    expect(after.anchor!.quantity).toBeCloseTo(5 + 12 - 12 / 28, 0);
+  });
+
+  it("isn't low right after buying something bought weekly", () => {
+    const weekly = { ...product, normalPurchaseQty: 1, unit: "gallon" };
+    const purchases = [0, 7, 14, 21, 28, 35].map((day) => ({ quantity: 1, purchasedAt: at(day) }));
+    expect(predict({ product: weekly, purchases, corrections: [], now: at(35) }).isLow).toBe(false);
+    expect(predict({ product: weekly, purchases, corrections: [], now: at(39) }).isLow).toBe(true);
+  });
+
+  it("forgives normal variation in when things are bought, and not erratic buying", () => {
+    const normal = [0, 26, 56, 82, 112, 138].map(own);
+    const fine = predict({ product, purchases: normal, corrections: [], now: at(150) });
+    expect(fine.confidence).toBeGreaterThanOrEqual(0.8);
+  });
+});

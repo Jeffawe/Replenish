@@ -15,7 +15,8 @@ import {
   unconfirmProduct,
 } from "@/modules/inventory/checks";
 import { listUnconfirmedProductIds } from "@/modules/inventory/pending";
-import { getInventory, recordStockCount, undoStockCount, type InventoryItem } from "@/modules/inventory/service";
+import { isAbandoned } from "@/core/abandoned";
+import { getInventory, getInventoryForPage, recordStockCount, undoStockCount, type InventoryItem } from "@/modules/inventory/service";
 import { DEFAULT_QUESTION_CONFIG } from "./config";
 import { changeFor, selectQuestions } from "./rules";
 import type { Answer, ProductFacts, Question } from "./types";
@@ -49,13 +50,14 @@ function factsOf({ product, estimate, corrections }: InventoryItem): ProductFact
     estimate,
     // Corrections are newest first.
     lastCountAt: corrections[0]?.recordedAt ?? null,
+    abandoned: isAbandoned(estimate, new Date()),
   };
 }
 
 /** The questions worth asking the user now, most useful first. */
 export async function getQuestions(userId: string): Promise<Question[]> {
   const [inventory, snoozed, waiting] = await Promise.all([
-    getInventory(userId),
+    getInventoryForPage(userId),
     listSnoozed(userId, new Date()),
     listUnconfirmedProductIds(userId),
   ]);
@@ -107,6 +109,49 @@ export async function answerQuestion(userId: string, answer: Answer): Promise<An
       return { status: "saved", undo: { type: "stock-count", correctionId: recorded.correctionId } };
     }
   }
+}
+
+export type CorrectionOutcome =
+  | {
+      status: "saved";
+      undo: Undo;
+      /** What the estimate says now, after the correction. */
+      daysUntilRunOut: number | null;
+      /** The product still needs attention (it is still running low), as the low-stock check sees it. */
+      stillNeedsAttention: boolean;
+    }
+  /** The number looks like a typo: ask "are you sure?" and send it again with `sure`. */
+  | { status: "check"; message: string }
+  | { status: "gone" };
+
+/**
+ * The user telling us how much they actually have, for any tracked product, whether or not we
+ * would have asked (a correction, not an answer to a question). Records a stock count, which
+ * makes the estimate and the product's next check date work themselves out again, and says
+ * what the estimate is now. A number far above what they usually buy is double-checked first.
+ */
+export async function correctStockCount(userId: string, productId: string, remaining: number, sure = false): Promise<CorrectionOutcome> {
+  const item = (await getInventory(userId, new Date())).find((entry) => entry.product.id === productId);
+  if (!item) return { status: "gone" };
+  if (!sure) {
+    const message = checkStockCount(remaining, {
+      unit: item.product.unit,
+      normalPurchaseQty: item.estimate.normalPurchaseQty,
+      estimatedRemaining: item.estimate.estimatedRemaining,
+    });
+    if (message) return { status: "check", message };
+  }
+  const recorded = await recordStockCount(userId, productId, remaining);
+  if (recorded === "not-found") return { status: "gone" };
+
+  const now = new Date();
+  const after = (await getInventory(userId, now)).find((entry) => entry.product.id === productId);
+  return {
+    status: "saved",
+    undo: { type: "stock-count", correctionId: recorded.correctionId },
+    daysUntilRunOut: after?.estimate.daysUntilRunOut ?? null,
+    stillNeedsAttention: after?.product.nextCheckAt != null && after.product.nextCheckAt <= now,
+  };
 }
 
 /** Takes an answer back ("Undo"). */

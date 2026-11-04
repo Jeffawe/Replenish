@@ -31,7 +31,7 @@ import { limitReachedMessage } from "@/core/receipt-limit";
 import { learnFromSave, loadDictionary, lookupProductCodes } from "@/modules/dictionary";
 import { lessonsFromReview, type Review } from "./aliases";
 import { addressFor, newToken } from "./email/address";
-import { emailExtractor } from "./email/extractor";
+import { createEmailExtractor } from "./email/extractor";
 import { handleInboundEmail } from "./email/inbound";
 import { supportedStores } from "./email/retailers";
 import { syncInbox } from "./email/sync";
@@ -70,10 +70,11 @@ const getExtractor = createRegistry([
     loadIgnored: listIgnoredWordings,
     loadDictionary,
     lookup: lookupProductCodes,
-    similar: createSimilarWordings(createModelEmbedder()),
+    // Its model runtime is too large for a Vercel function (and left out of the build there; see next.config.ts).
+    ...(process.env.VERCEL ? {} : { similar: createSimilarWordings(createModelEmbedder()) }),
     record: samples?.saveRead,
   }),
-  emailExtractor,
+  createEmailExtractor(undefined, undefined, { loadAliases: listAliases, loadDictionary }),
 ]);
 
 // Everything outside this folder imports from here (server code) or from ./client (browser code), never from deeper files.

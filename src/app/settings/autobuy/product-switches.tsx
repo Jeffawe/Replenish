@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import Link from "next/link";
+import { useRef, useState, useTransition } from "react";
+import { AutoBuyConsent } from "./auto-buy-consent";
+import type { AutoBuyTerms } from "@/modules/orders/client";
 import { setProductAutobuyAction } from "../actions";
 import { MUTED } from "../fields";
 
@@ -24,7 +27,8 @@ function note(row: SwitchRow, minConfidence: number): string {
   return `${percent} sure.`;
 }
 
-export function ProductSwitches({ rows, minConfidence }: { rows: SwitchRow[]; minConfidence: number }) {
+/** `setupProblem` is why auto-buy can't be switched on yet (no PayPal or address), or null. Rows already on can still be switched off. */
+export function ProductSwitches({ rows, minConfidence, setupProblem, terms }: { rows: SwitchRow[]; minConfidence: number; setupProblem: string | null; terms: AutoBuyTerms }) {
   if (rows.length === 0) {
     return (
       <section className="flex flex-col gap-2">
@@ -38,21 +42,30 @@ export function ProductSwitches({ rows, minConfidence }: { rows: SwitchRow[]; mi
       <div>
         <h2 className="text-base font-semibold">Products</h2>
         <p className={MUTED}>Choose what we may buy without asking. You can also change this in a product&rsquo;s Edit dialog.</p>
+        {setupProblem && (
+          <p role="note" className="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+            {setupProblem}{" "}
+            <Link href="/settings/payment" className="font-medium underline underline-offset-2">
+              Set it up
+            </Link>
+          </p>
+        )}
       </div>
       <ul className="flex flex-col divide-y divide-zinc-200 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
         {rows.map((row) => (
-          <ProductSwitch key={row.id} row={row} minConfidence={minConfidence} />
+          <ProductSwitch key={row.id} row={row} minConfidence={minConfidence} locked={setupProblem !== null} terms={terms} />
         ))}
       </ul>
     </section>
   );
 }
 
-function ProductSwitch({ row, minConfidence }: { row: SwitchRow; minConfidence: number }) {
+function ProductSwitch({ row, minConfidence, locked, terms }: { row: SwitchRow; minConfidence: number; locked: boolean; terms: AutoBuyTerms }) {
   const [enabled, setEnabled] = useState(row.enabled);
   const [problem, setProblem] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const id = `autobuy-${row.id}`;
+  const consentRef = useRef<HTMLDialogElement>(null);
 
   function change(next: boolean) {
     setEnabled(next);
@@ -77,11 +90,13 @@ function ProductSwitch({ row, minConfidence }: { row: SwitchRow; minConfidence: 
         id={id}
         type="checkbox"
         checked={enabled}
-        disabled={!row.confirmed || pending}
-        onChange={(event) => change(event.target.checked)}
+        disabled={!row.confirmed || pending || (locked && !enabled)}
+        // Turning it on spends money without asking, so they read what that means first. Turning it off needs nothing.
+        onChange={(event) => (event.target.checked ? consentRef.current?.showModal() : change(false))}
         aria-describedby={`${id}-note`}
         className="mt-1 size-4 shrink-0"
       />
+      <AutoBuyConsent ref={consentRef} name={row.name} terms={terms} onConfirm={() => change(true)} />
       <div className="min-w-0">
         <label htmlFor={id} className="block truncate text-sm font-medium">
           {row.name}
