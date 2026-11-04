@@ -95,10 +95,4 @@ npm test            # fast and offline
 npm run test:db     # against a real database, with throwaway users
 ```
 
-## Known limits
-
-- **Channel3's links can't be used for live orders.** They forward through Channel3's own page, which Zinc's sandbox accepts but live Zinc can't read. This needs solving before real money.
-- Food search in Zinc's sandbox returns invented "Sample" listings, marked as such everywhere.
-- Email can read Amazon's order confirmations so far.
-
 Built with Next.js, React, Tailwind, Drizzle and Neon Postgres. [MIT license](LICENSE).
