@@ -77,6 +77,15 @@ describe("ingestPurchaseBatch: products", () => {
     expect(event.purchasedAt).toEqual(new Date("2026-10-01"));
   });
 
+  it("counts a product typed in by hand as kept, and only suggests one from a receipt", async () => {
+    const userId = await newUser();
+    await ingestPurchaseBatch(userId, batch({ source: "manual", items: [milk] }));
+    await ingestPurchaseBatch(userId, batch({ source: "receipt", items: [toilet] }));
+    const byName = new Map((await productsOf(userId)).map((product) => [product.name, product]));
+    expect(byName.get(milk.productName)?.confirmedAt).not.toBeNull();
+    expect(byName.get(toilet.productName)?.confirmedAt).toBeNull();
+  });
+
   it("applies later purchases to the same product instead of creating another", async () => {
     const userId = await newUser();
     const first = await ingestPurchaseBatch(userId, batch());

@@ -47,7 +47,8 @@ export async function InventoryList() {
         <Stat label="Stocked" value={counts.ok} />
         <Stat label="Needs data" value={counts.unknown} />
       </dl>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {/* grid-cols-1 too: a plain grid column grows to fit its widest content, so one long product name would widen the page on a phone. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((item) => (
           <InventoryCard
             key={item.product.id}

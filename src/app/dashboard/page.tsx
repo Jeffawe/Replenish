@@ -8,20 +8,23 @@ import { Questions } from "@/app/questions/questions";
 import { OrderResults, PaymentNotice } from "@/app/orders/order-results";
 import { RestockSuggestions } from "@/app/restock/restock-suggestions";
 import { InventoryList } from "./inventory-list";
+import { SandboxBanner } from "@/app/sandbox-banner";
 
 export const metadata: Metadata = { title: "Inventory · Replenish" };
 
 export default function DashboardPage() {
   return (
+    <>
+    <SandboxBanner />
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
-      <header className="flex items-start justify-between gap-4">
-        <div>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Inventory</h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             What you have at home, and when it is likely to run out. Most urgent first.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Suspense fallback={null}>
             <Questions />
           </Suspense>
@@ -51,6 +54,7 @@ export default function DashboardPage() {
         <InventoryList />
       </Suspense>
     </main>
+    </>
   );
 }
 

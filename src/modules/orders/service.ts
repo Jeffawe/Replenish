@@ -110,7 +110,7 @@ export async function autoBuySetupProblem(userId: string): Promise<string | null
   const setup = await paymentSetup(userId);
   const missing = [setup.paypal === "connected" ? null : setup.paypal === "reconnect" ? "reconnect PayPal" : "connect PayPal", setup.hasAddress ? null : "add a delivery address"].filter(Boolean);
   if (missing.length === 0) return null;
-  return `Auto-buy needs ${missing.join(" and ")} first, so we can pay and know where to send it (Settings, Payment & delivery).`;
+  return `Auto-buy needs you to ${missing.join(" and ")} first, so we can pay and know where to send it (Settings, Payment & delivery).`;
 }
 
 /** Whether the user has auto-buy on for something but can't be served yet (no PayPal, or no address): the dashboard says so. */

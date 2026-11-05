@@ -55,7 +55,7 @@ export async function ingestPurchaseBatch(
       rejected.set(index, "You rejected this order earlier");
       continue;
     }
-    const resolved = await resolveProduct(userId, line, byId, byName, register);
+    const resolved = await resolveProduct(userId, line, byId, byName, register, batch.source);
     if ("reason" in resolved) {
       rejected.set(index, resolved.reason);
     } else if (unitKey(resolved.product.unit) !== unitKey(line.unit)) {
@@ -256,6 +256,7 @@ async function resolveProduct(
   byId: Map<string, Product>,
   byName: Map<string, Product>,
   register: (product: Product) => void,
+  source: string,
 ): Promise<{ product: Product; productCreated: boolean } | { reason: string }> {
   if (line.productId) {
     const product = byId.get(line.productId);
@@ -280,6 +281,8 @@ async function resolveProduct(
       category: line.category ?? null,
       unit: line.unit,
       normalPurchaseQty: line.quantity,
+      // Typing a product in already says "keep track of this", so it isn't asked. A receipt or email only suggests one.
+      confirmedAt: source === "manual" ? new Date() : null,
     })
     .onConflictDoNothing({ target: [products.userId, products.normalizedName] })
     .returning();

@@ -49,7 +49,7 @@ export function FlowHeader({ title, subtitle, onClose }: { title: string; subtit
         type="button"
         onClick={onClose}
         aria-label="Close"
-        className="rounded-full px-2 py-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+        className="rounded-full px-3 py-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
       >
         &times;
       </button>

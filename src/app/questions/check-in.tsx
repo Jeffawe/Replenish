@@ -50,7 +50,12 @@ export function CheckIn({ questions, count, everyDays }: { questions: Question[]
   // The products picked when it opened; answered questions drop out as the list refreshes.
   const picked = useSyncExternalStore(opened.subscribe, opened.get, opened.server);
 
+  // Decided once, when the dashboard opens. Questions that appear later, like right after saving a purchase, wait for
+  // the next visit (and the panel), so this never lands on top of what the user is doing.
+  const decided = useRef(false);
   useEffect(() => {
+    if (decided.current) return;
+    decided.current = true;
     if (picked !== null || questions.length === 0 || shownRecently(everyDays)) return;
     rememberShown();
     // A few products, not a few questions about one.

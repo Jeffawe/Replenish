@@ -81,7 +81,7 @@ export function InventoryCard({
   const tones = TONES[status.tone];
 
   return (
-    <article className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+    <article className="flex min-w-0 flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold">{product.name}</h2>
@@ -238,7 +238,8 @@ function Explanation({ item, now }: { item: InventoryItem; now: Date }) {
           <ul className="flex flex-col gap-1 text-zinc-600 dark:text-zinc-400">
             <li>
               Usage: {formatRate(rateValue)} {estimate.unit}/day
-              {estimate.consumptionError !== null && ` ± ${formatRate(estimate.consumptionError)}`}
+              {/* An error under 1% of the rate is rounding, not uncertainty worth showing. */}
+              {estimate.consumptionError !== null && estimate.consumptionError >= rateValue * 0.01 && ` ± ${formatRate(estimate.consumptionError)}`}
               {estimate.rateSource === "fallback" &&
                 ` (from your estimate that one purchase lasts about ${product.fallbackDaysPerPurchase} days)`}
             </li>

@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/modules/auth";
 import { AuthForm } from "./auth-form";
+import { SandboxBanner } from "@/app/sandbox-banner";
 
 /** Someone who is already signed in has no use for the login page. Reads the cookie, so it sits in its own Suspense. */
 async function SkipIfSignedIn() {
@@ -13,6 +14,8 @@ async function SkipIfSignedIn() {
 /** The shared look of /login and /signup. */
 export function AuthPage({ mode }: { mode: "login" | "signup" }) {
   return (
+    <>
+    <SandboxBanner />
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 px-4 py-12">
       <Suspense fallback={null}>
         <SkipIfSignedIn />
@@ -23,5 +26,6 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
       </header>
       <AuthForm mode={mode} />
     </main>
+    </>
   );
 }

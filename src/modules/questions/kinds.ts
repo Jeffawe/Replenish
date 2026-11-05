@@ -35,7 +35,7 @@ const track: Kind = {
   applies: (facts) => !facts.confirmed,
   ask: (facts) => ({
     prompt: `Do you want to keep track of ${facts.name}?`,
-    hint: "It came from a receipt. Say no and we'll leave it out next time.",
+    hint: "It's new on your list. Say no and we'll leave it out next time.",
     choices: [
       { id: "yes", label: "Yes" },
       { id: "no", label: "No" },

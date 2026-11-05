@@ -9,6 +9,7 @@ import { leastOrderCostCents, orderFeesCents, priceBreakdown } from "@/core/orde
 import { PRIMARY, SECONDARY } from "@/app/ingest/flow-kit";
 import { MOST_PACKS } from "@/modules/orders/client";
 import { CONCERN_LABELS, type Suggestion } from "@/modules/restock/client";
+import { formatDate } from "@/lib/format";
 import { buyForMeAction, snoozeSuggestionAction } from "./actions";
 import { BoughtItButton } from "./bought-it-dialog";
 import { CorrectionButton } from "./correction-dialog";
@@ -20,7 +21,7 @@ type Listing = Suggestion["pick"];
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 /** The quiet row: visible and easy to reach, but clearly not the main thing on the card. */
-const QUIET = "rounded px-1 py-0.5 text-sm text-zinc-600 underline-offset-2 hover:underline disabled:opacity-50 dark:text-zinc-400";
+const QUIET = "rounded px-1 py-2 text-sm text-zinc-600 underline-offset-2 hover:underline disabled:opacity-50 dark:text-zinc-400";
 
 /** "walmart.com · $4.99 × 2 packs = $9.98 · 12 per pack", in one line. */
 function details(listing: Listing): string {
@@ -258,7 +259,7 @@ export function SuggestionCard({ suggestion, skipConfirm, maxOrderCents }: { sug
         <button type="button" onClick={notNow} disabled={pending} className={QUIET}>
           Not now
         </button>
-        <span className="ml-auto text-xs text-zinc-500 dark:text-zinc-400">Checked {suggestion.searchedAt}</span>
+        <span className="ml-auto text-xs text-zinc-500 dark:text-zinc-400">Checked {formatDate(new Date(suggestion.searchedAt))}</span>
       </div>
 
       {showOthers && (

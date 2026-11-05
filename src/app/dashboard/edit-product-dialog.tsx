@@ -88,7 +88,7 @@ export function EditProductDialog({
         type="button"
         onClick={() => dialogRef.current?.showModal()}
         aria-label={`Edit ${product.name}`}
-        className="rounded-full border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        className="rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
       >
         Edit
       </button>
@@ -124,7 +124,7 @@ export function EditProductDialog({
               type="button"
               onClick={() => dialogRef.current?.close()}
               aria-label="Close"
-              className="rounded-full px-2 py-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              className="rounded-full px-3 py-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
             >
               &times;
             </button>

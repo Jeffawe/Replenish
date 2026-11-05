@@ -108,7 +108,7 @@ The same file exports `listProductSummaries` and `listPurchasesNear`, the two re
 
 Neither knows anything about a particular source. `extractAction` turns an `ExtractionError` into `{ ok: false, error: "failed", message }`. `submitAction` also takes an optional list of how each line was worded, and remembers those wordings as product aliases (see [Receipts](#receipts)). The browser must never call `/api/ingest` directly, because that endpoint needs a secret key.
 
-**Manual entry** ([ingest/manual/](../src/app/ingest/manual/manual-flow.tsx)) has no producer and no `extractAction`: the form builds a `manual` batch itself (idempotency key made when the form opens) and calls `submitAction`, since there is nothing to read or review.
+**Manual entry** ([ingest/manual/](../src/app/ingest/manual/manual-flow.tsx)) has no producer and no `extractAction`: the form builds a `manual` batch itself (idempotency key made when the form opens) and calls `submitAction`, since there is nothing to read or review. A product it creates counts as kept from the start (typing it in already says "keep track of this"), so it gets no "keep tracking?" question; receipts and emails only suggest a product, so theirs are still asked.
 
 Today the only UI using them is the **+** button on the dashboard ([add-purchases/](../src/app/dashboard/add-purchases/)), which only shows the menu of sources and the finished screen. Each source's own screens are a *flow* ([flow-kit.tsx](../src/app/ingest/flow-kit.tsx)); the receipt one is in [ingest/receipt/](../src/app/ingest/receipt/)..
 

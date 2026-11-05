@@ -60,7 +60,7 @@ function CancelButton({ order, onChanged }: { order: OrderView; onChanged(): voi
   if (message) return <p className="text-sm text-zinc-600 dark:text-zinc-400">{message}</p>;
   if (!asking) {
     return (
-      <button type="button" onClick={() => setAsking(true)} className="w-fit text-sm text-zinc-600 underline-offset-2 hover:underline dark:text-zinc-400">
+      <button type="button" onClick={() => setAsking(true)} className="w-fit rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
         Cancel order
       </button>
     );
@@ -68,10 +68,10 @@ function CancelButton({ order, onChanged }: { order: OrderView; onChanged(): voi
   return (
     <p className="flex flex-wrap items-center gap-3 text-sm">
       <span>Cancel this order?</span>
-      <button type="button" disabled={pending} onClick={cancel} className="font-medium text-rose-700 underline-offset-2 hover:underline disabled:opacity-50 dark:text-rose-300">
+      <button type="button" disabled={pending} onClick={cancel} className="rounded-full border border-rose-300 px-4 py-2 font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950">
         {pending ? "Cancelling…" : "Yes, cancel it"}
       </button>
-      <button type="button" disabled={pending} onClick={() => setAsking(false)} className="text-zinc-600 underline-offset-2 hover:underline dark:text-zinc-400">
+      <button type="button" disabled={pending} onClick={() => setAsking(false)} className="px-2 py-2 text-zinc-600 underline-offset-2 hover:underline dark:text-zinc-400">
         Keep it
       </button>
     </p>

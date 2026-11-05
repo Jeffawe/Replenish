@@ -106,7 +106,7 @@ describe("the address PayPal had on file", () => {
 describe("whether auto-buy may be switched on", () => {
   it("needs PayPal and a delivery address, and says which is missing", async () => {
     const userId = await newUser();
-    expect(await autoBuySetupProblem(userId)).toBe("Auto-buy needs connect PayPal and add a delivery address first, so we can pay and know where to send it (Settings, Payment & delivery).");
+    expect(await autoBuySetupProblem(userId)).toBe("Auto-buy needs you to connect PayPal and add a delivery address first, so we can pay and know where to send it (Settings, Payment & delivery).");
 
     const payments = new FakePayments();
     await startPaypalSetup(userId, "https://app.test", payments);

@@ -570,7 +570,7 @@ function buildConfidenceFactors(ctx: ConfidenceContext): ConfidenceFactor[] {
       factor(
         "Overdue",
         clamp(1 - overdueDays / packDays, config.overdueFloor, 1),
-        `Expected to run out ${Math.round(overdueDays)} days ago with no new purchase or answer recorded.`,
+        `Expected to run out ${Math.round(overdueDays) < 1 ? "today" : Math.round(overdueDays) === 1 ? "1 day ago" : `${Math.round(overdueDays)} days ago`} with no new purchase or answer recorded.`,
       ),
     );
   }
