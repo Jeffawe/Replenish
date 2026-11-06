@@ -29,6 +29,26 @@ const STOCK = [
 const START =
   "inline-flex items-center gap-2 rounded-full bg-emerald-600 px-8 py-4 text-base font-medium text-white shadow-lg shadow-emerald-600/25 transition hover:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600";
 
+/** The logo, inline so it needs no request and can't be held up by the sign-in proxy. Same drawing as src/app/icon.svg. */
+function Logo() {
+  return (
+    <svg viewBox="4 7 56 56" className="size-5" aria-hidden>
+      <defs>
+        <clipPath id="logo-inside">
+          <path d="M17 17 H47 L43.6 55 Q43.2 59 39.2 59 H24.8 Q20.8 59 20.4 55 Z" />
+        </clipPath>
+        <linearGradient id="logo-water" gradientUnits="userSpaceOnUse" x1="0" y1="33" x2="0" y2="59">
+          <stop offset="0" stopColor="#34d399" />
+          <stop offset="1" stopColor="#059669" />
+        </linearGradient>
+      </defs>
+      <path clipPath="url(#logo-inside)" d="M0 38 Q8 34 16 38 T32 38 T48 38 T64 38 V64 H0 Z" fill="url(#logo-water)" />
+      <path d="M32 9 C32 9 27.6 15.4 27.6 18.6 A4.4 4.4 0 0 0 36.4 18.6 C36.4 15.4 32 9 32 9 Z" fill="#10b981" />
+      <path d="M17 17 L20.4 55 Q20.8 59 24.8 59 H39.2 Q43.2 59 43.6 55 L47 17" fill="none" stroke="#059669" strokeWidth="3.6" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function Arrow() {
   return (
     <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -47,7 +67,8 @@ export default function Home() {
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-24 px-5 pb-20 sm:px-8">
         <section className="grid min-h-[calc(100svh-4rem)] items-center gap-12 pt-10 lg:grid-cols-2">
           <div className="flex flex-col items-start gap-6">
-            <span className="rounded-full border border-emerald-600/30 bg-emerald-600/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-600/30 bg-emerald-600/10 py-1 pl-2 pr-3 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+              <Logo />
               Replenish
             </span>
             <h1 className="text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">

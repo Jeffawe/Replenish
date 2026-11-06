@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="4 7 56 56" width="256" height="256" role="img" aria-label="Replenish">
+  <defs>
+    <clipPath id="inside">
+      <path d="M17 17 H47 L43.6 55 Q43.2 59 39.2 59 H24.8 Q20.8 59 20.4 55 Z"/>
+    </clipPath>
+    <linearGradient id="water" gradientUnits="userSpaceOnUse" x1="0" y1="33" x2="0" y2="59">
+      <stop offset="0" stop-color="#34d399"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <!-- water -->
+  <path clip-path="url(#inside)" d="M0 38 Q8 34 16 38 T32 38 T48 38 T64 38 V64 H0 Z" fill="url(#water)"/>
+  <!-- a drop on its way down, not landed yet -->
+  <path d="M32 9 C32 9 27.6 15.4 27.6 18.6 A4.4 4.4 0 0 0 36.4 18.6 C36.4 15.4 32 9 32 9 Z" fill="#10b981"/>
+  <!-- glass, open at the top -->
+  <path d="M17 17 L20.4 55 Q20.8 59 24.8 59 H39.2 Q43.2 59 43.6 55 L47 17" fill="none" stroke="#059669" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

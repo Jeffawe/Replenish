@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-label="A glass filling up, drop by drop">
+  <style>
+    /* One 7s loop: three drops fall into the glass, each lifts the water where it lands, then the glass is used up and it starts again. */
+    .rise { animation: rise 7s infinite; }
+    .wave { animation: slide 2.3333s linear infinite; }
+    .drop, .ripple, .spray { opacity: 0; animation-duration: 7s; animation-iteration-count: infinite; }
+    .drop { animation-name: fall; transform-origin: 32px 3px; }
+    .ripple { animation-name: ripple; transform-box: fill-box; transform-origin: center; }
+    .spray { animation-name: spray; }
+    .d1 { animation-delay: .2s; --to: 44px; }
+    .d2 { animation-delay: 1.6s; --to: 37px; }
+    .d3 { animation-delay: 3s; --to: 28px; }
+    .i1 { animation-delay: 1.04s; }
+    .i2 { animation-delay: 2.44s; }
+    .i3 { animation-delay: 3.84s; }
+    .left { --dx: -6px; }
+    .right { --dx: 6px; }
+
+    /* Water sits still until a drop lands (15%, 35%, 55%), then lifts. */
+    @keyframes rise {
+      0%, 15% { transform: translateY(28px); animation-timing-function: ease-out; }
+      20%, 35% { transform: translateY(17px); animation-timing-function: ease-out; }
+      40%, 55% { transform: translateY(8px); animation-timing-function: ease-out; }
+      60%, 82% { transform: translateY(0); animation-timing-function: ease-in-out; }
+      98%, 100% { transform: translateY(28px); }
+    }
+    @keyframes slide { to { transform: translateX(-32px); } }
+    /* Swells at the top, then accelerates and stretches on the way down, gone on contact. */
+    @keyframes fall {
+      0% { opacity: 0; transform: translateY(0) scale(.15); animation-timing-function: ease-out; }
+      5% { opacity: 1; transform: translateY(0) scale(.7); animation-timing-function: cubic-bezier(.55, 0, 1, .55); }
+      12% { opacity: 1; transform: translateY(var(--to)) scale(.6, .85); }
+      12.01%, 100% { opacity: 0; transform: translateY(var(--to)) scale(.6, .85); }
+    }
+    @keyframes ripple {
+      0% { opacity: .9; transform: scale(.2); animation-timing-function: ease-out; }
+      9%, 100% { opacity: 0; transform: scale(1); }
+    }
+    @keyframes spray {
+      0% { opacity: 1; transform: translate(0, 0); animation-timing-function: ease-out; }
+      3% { opacity: 1; transform: translate(calc(var(--dx) * .6), -6px); animation-timing-function: ease-in; }
+      6%, 100% { opacity: 0; transform: translate(var(--dx), -1px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .rise, .wave, .drop, .ripple, .spray { animation: none; }
+    }
+  </style>
+  <defs>
+    <clipPath id="inside">
+      <path d="M17 17 H47 L43.6 55 Q43.2 59 39.2 59 H24.8 Q20.8 59 20.4 55 Z"/>
+    </clipPath>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#34d399"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+
+  <!-- water -->
+  <g clip-path="url(#inside)">
+    <g class="rise">
+      <g class="wave">
+        <path d="M-16 33 Q-8 29 0 33 T16 33 T32 33 T48 33 T64 33 T80 33 T96 33 T112 33 V70 H-16 Z" fill="url(#water)"/>
+      </g>
+    </g>
+    <!-- where each drop lands: the bottom of the empty glass, then the water's surface -->
+    <ellipse class="ripple i1" cx="32" cy="55" rx="9" ry="1.6" fill="none" stroke="#6ee7b7" stroke-width="1.2"/>
+    <ellipse class="ripple i2" cx="32" cy="50" rx="11" ry="1.8" fill="none" stroke="#a7f3d0" stroke-width="1.2"/>
+    <ellipse class="ripple i3" cx="32" cy="41" rx="12" ry="2" fill="none" stroke="#a7f3d0" stroke-width="1.2"/>
+    <circle class="spray i1 left" cx="30" cy="55" r="1.1" fill="#10b981"/>
+    <circle class="spray i1 right" cx="34" cy="55" r="1.1" fill="#10b981"/>
+    <circle class="spray i2 left" cx="30" cy="50" r="1.1" fill="#10b981"/>
+    <circle class="spray i2 right" cx="34" cy="50" r="1.1" fill="#10b981"/>
+    <circle class="spray i3 left" cx="30" cy="41" r="1.1" fill="#10b981"/>
+    <circle class="spray i3 right" cx="34" cy="41" r="1.1" fill="#10b981"/>
+  </g>
+
+  <!-- the drops, falling in through the open top -->
+  <path class="drop d1" d="M32 3 C32 3 27 9 27 11.6 A5 5 0 0 0 37 11.6 C37 9 32 3 32 3 Z" fill="#10b981"/>
+  <path class="drop d2" d="M32 3 C32 3 27 9 27 11.6 A5 5 0 0 0 37 11.6 C37 9 32 3 32 3 Z" fill="#10b981"/>
+  <path class="drop d3" d="M32 3 C32 3 27 9 27 11.6 A5 5 0 0 0 37 11.6 C37 9 32 3 32 3 Z" fill="#10b981"/>
+
+  <!-- glass, open at the top so nothing crosses a rim -->
+  <path d="M17 17 L20.4 55 Q20.8 59 24.8 59 H39.2 Q43.2 59 43.6 55 L47 17" fill="none" stroke="#059669" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

@@ -16,5 +16,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   // `.+` (not `.*`) leaves "/" out: that is the landing page, open to everyone.
-  matcher: ["/((?!api|login|signup|_next/static|_next/image|favicon.ico).+)"],
+  // The icons and brand images have to load for signed-out visitors too.
+  matcher: ["/((?!api|login|signup|_next/static|_next/image|favicon.ico|icon|apple-icon|brand/).+)"],
 };
