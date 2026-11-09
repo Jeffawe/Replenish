@@ -74,12 +74,20 @@ const shown = (now: Date) =>
     notExists(db.select({ one: orders.id }).from(orders).where(activeOrder(now))),
   );
 
-async function readSuggestions(now: Date, extra?: SQL): Promise<Suggestion[]> {
+/**
+ * A suggestion the user may buy even though nobody is asking about it right now: still open, the
+ * product still visible, nothing already ordered for it. It need not be low or un-snoozed, because
+ * "Buy now" on any product's card starts from one of these.
+ */
+const buyable = (now: Date) =>
+  and(eq(restockSuggestions.status, "open"), isNull(products.archivedAt), notExists(db.select({ one: orders.id }).from(orders).where(activeOrder(now))));
+
+async function readSuggestions(now: Date, extra?: SQL, scope: SQL | undefined = shown(now)): Promise<Suggestion[]> {
   const rows = await db
     .select({ suggestion: restockSuggestions, product: products })
     .from(restockSuggestions)
     .innerJoin(products, eq(products.id, restockSuggestions.productId))
-    .where(and(shown(now), extra))
+    .where(and(scope, extra))
     .orderBy(asc(products.nextCheckAt));
 
   return rows.flatMap(({ suggestion, product }): Suggestion[] => {
@@ -120,6 +128,15 @@ export function listAutoBuySuggestions(now: Date = new Date(), userId?: string):
 /** One of the user's suggestions, if it is still being shown to them. */
 export async function getSuggestion(userId: string, id: string, now: Date = new Date()): Promise<Suggestion | null> {
   return (await readSuggestions(now, and(eq(restockSuggestions.userId, userId), eq(restockSuggestions.id, id))))[0] ?? null;
+}
+
+/**
+ * One of the user's suggestions to buy, found by its id or by its product, whether or not the product is low.
+ * What the buying step reads (the user asked, and can see what it is), so it also works for a product that isn't running out.
+ */
+export async function getSuggestionToBuy(userId: string, by: { id: string } | { productId: string }, now: Date = new Date()): Promise<Suggestion | null> {
+  const which = "id" in by ? eq(restockSuggestions.id, by.id) : eq(restockSuggestions.productId, by.productId);
+  return (await readSuggestions(now, and(eq(restockSuggestions.userId, userId), which), buyable(now)))[0] ?? null;
 }
 
 /** How long "Not now" keeps a suggestion, and auto-buy for that product, quiet. */

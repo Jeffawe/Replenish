@@ -2,7 +2,7 @@ import { and, count, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { products } from "@/db/schema";
-import { getSuggestion } from "@/modules/restock";
+import { getSuggestionToBuy } from "@/modules/restock";
 import { leastOrderCostCents, monthStart } from "@/core/order-money";
 import { effectiveLimit, type UserSettings } from "@/core/user-settings";
 import { getDeliveryAddress, platformLimits } from "@/modules/settings";
@@ -19,7 +19,7 @@ import { MOST_PACKS, ORDERS_PAGE_SIZE, type AutoBuyTerms, type OrderOnTheWay, ty
  * a position in the suggestion's own list, so the browser can only ever choose from what we stored.
  */
 export async function buyNow(userId: string, suggestionId: string, deps: OrderDeps, choice?: { option: number; packs: number }): Promise<PlaceOutcome> {
-  const suggestion = await getSuggestion(userId, suggestionId);
+  const suggestion = await getSuggestionToBuy(userId, { id: suggestionId });
   if (!suggestion) return { status: "refused", reason: "not-found", message: "That suggestion is no longer there." };
   const listing = [suggestion.pick, ...suggestion.alternatives][choice?.option ?? 0];
   if (!listing) return { status: "refused", reason: "not-found", message: "That option is no longer there." };

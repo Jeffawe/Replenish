@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Question } from "@/modules/questions/client";
 import { DialogFrame } from "./dialog-frame";
 import { QuestionStepper } from "./question-stepper";
@@ -35,7 +35,7 @@ const opened = {
   get: () => openedWith,
   server: () => null,
 };
-function open(productIds: string[]) {
+function open(productIds: string[] | null) {
   openedWith = productIds;
   for (const listener of listeners) listener();
 }
@@ -56,7 +56,11 @@ export function CheckIn({ questions, count, everyDays }: { questions: Question[]
   useEffect(() => {
     if (decided.current) return;
     decided.current = true;
-    if (picked !== null || questions.length === 0 || shownRecently(everyDays)) return;
+    // What is remembered here outlives the page: signing out and in is a soft navigation, and a reset or another
+    // account has different products. If none of those products is asked about now it is left over, so forget it.
+    const leftOver = picked !== null && !questions.some((q) => picked.includes(q.productId));
+    if (leftOver) open(null);
+    if ((picked !== null && !leftOver) || questions.length === 0 || shownRecently(everyDays)) return;
     rememberShown();
     // A few products, not a few questions about one.
     open([...new Set(questions.map((q) => q.productId))].slice(0, count));
@@ -66,9 +70,12 @@ export function CheckIn({ questions, count, everyDays }: { questions: Question[]
     if (picked !== null && !dialogRef.current?.open) dialogRef.current?.showModal();
   }, [picked]);
 
-  if (picked === null) return null;
   // Every remaining question about a picked product, so answering one moves on to that product's next.
-  const remaining = questions.filter((q) => picked.includes(q.productId));
+  const remaining = picked === null ? [] : questions.filter((q) => picked.includes(q.productId));
+  // "All done" only makes sense after there were questions to answer; without that it is an empty box.
+  const [hadQuestions, setHadQuestions] = useState(false);
+  if (!hadQuestions && remaining.length > 0) setHadQuestions(true);
+  if (picked === null || (remaining.length === 0 && !hadQuestions)) return null;
   return (
     <DialogFrame ref={dialogRef} title="Quick check-in" subtitle="A few questions to keep your estimates right. Close this any time.">
       <QuestionStepper questions={remaining} empty={<p className="text-sm">All done. Thanks!</p>} />

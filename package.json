@@ -15,6 +15,7 @@
     "approve": "tsx --env-file=.env.local scripts/approve.ts",
     "db:seed": "tsx --env-file=.env.local scripts/seed.ts",
     "receipt": "tsx --env-file=.env.local scripts/try-receipt.ts",
+    "seed:judges": "tsx --env-file=.env.local scripts/seed-judges.ts",
     "samples": "tsx --env-file=.env.local scripts/review-samples.ts",
     "dictionary": "tsx --env-file=.env.local scripts/dictionary.ts",
     "encoder": "tsx --env-file=.env.local scripts/encoder.ts",

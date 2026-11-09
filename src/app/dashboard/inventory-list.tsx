@@ -2,7 +2,7 @@ import { requireUser } from "@/modules/auth";
 import { DEFAULT_PREDICT_CONFIG } from "@/core/predict";
 import { getInventoryForPage } from "@/modules/inventory/service";
 import { autoBuyTerms, ordersOnTheWay } from "@/modules/orders";
-import { getUserSettings } from "@/modules/settings";
+import { getUserSettings, platformLimits } from "@/modules/settings";
 import { InventoryCard, getStatus } from "./inventory-card";
 
 export async function InventoryList() {
@@ -24,6 +24,7 @@ export async function InventoryList() {
   }
 
   const terms = autoBuyTerms(settings);
+  const maxOrderCents = platformLimits().buyNowOrderCents;
 
   // Every product, so a duplicate can be merged into the right one.
   const others = items.map(({ product }) => ({ id: product.id, name: product.name, unit: product.unit }));
@@ -58,6 +59,7 @@ export async function InventoryList() {
             others={others}
             order={onTheWay.get(item.product.id) ?? null}
             autoBuyTerms={terms}
+            maxOrderCents={maxOrderCents}
             defaultThresholdDays={defaultThresholdDays}
           />
         ))}

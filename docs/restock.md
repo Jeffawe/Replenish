@@ -167,6 +167,8 @@ When the scheduled job finds a low product with a listing, the user is told at t
 
 **Asking never buys.** "Buy for me" hands the suggestion to the orders module ([orders.md](orders.md)): PayPal is charged and Zinc buys it, and the user lands on the Orders page. The action reads the suggestion back from the database by id; nothing the browser sends (a link, a price) decides what is bought. A product with an order in progress or on its way isn't suggested, searched or bought again.
 
+**Buy now, on any product.** Each product card on the dashboard has a **Buy now** button (hidden while an order for it is on its way), for buying something that isn't running out yet. It searches for that one product when pressed (`findForBuyNow` in `buy-now.ts`; a search from the last 24 hours is reused, since each costs a credit) and stores the result as the product's suggestion, which the dashboard's "running low" cards don't show because the product isn't low. Then it opens the same "Buy this for you?" step as Buy for me, always (nothing told the user this was coming). A search that finds nothing only says so: unlike the scheduled run it doesn't set `restock_none_found_at`, so the next run still searches. Buying reads the suggestion with `getSuggestionToBuy`, which needs it open, the product visible and nothing already ordered, but not low or un-snoozed.
+
 ## What a run returns: `RestockReport`
 
 `runRestock(search)` runs the check and then the finder, and returns plain, JSON-safe data with no database rows ([report.ts](../src/modules/restock/report.ts)).

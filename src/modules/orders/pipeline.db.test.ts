@@ -7,6 +7,8 @@ import { DEFAULT_PLATFORM_LIMITS, type PlatformLimits } from "@/core/user-settin
 import { db } from "@/db/client";
 import { orders, products, purchaseEvents, restockSuggestions } from "@/db/schema";
 import { mergeProducts } from "@/modules/inventory/service";
+import { ingestPurchaseBatch } from "@/modules/inventory/ingest";
+import { PurchaseBatchSchema } from "@/core/purchase-batch";
 import { listSuggestions } from "@/modules/restock";
 import { FulfilmentError } from "./fulfilment";
 import { placedAt } from "./fake-fulfilment";
@@ -30,6 +32,15 @@ async function started(s: Awaited<ReturnType<typeof scene>>) {
 }
 
 describe("buying a suggestion", () => {
+  it("still buys when the product is no longer low (Buy now on any product)", async () => {
+    const s = await scene(newUser);
+    // Bought today, so it isn't low and the "running low" card has gone; the stored listing can still be bought.
+    await ingestPurchaseBatch(s.userId, PurchaseBatchSchema.parse({ source: "manual", idempotencyKey: `restocked-${s.userId}`, purchasedAt: new Date().toISOString(), items: [{ productId: s.productId, productName: "Toilet Paper", quantity: 12, unit: "rolls" }] }));
+    expect(await listSuggestions(s.userId)).toEqual([]);
+    const order = await started(s);
+    expect(order).toMatchObject({ status: "processing", source: "buy-now" });
+  });
+
   it("charges PayPal for the ceiling, sends the order to Zinc, and waits for the result", async () => {
     const s = await scene(newUser);
     const order = await started(s);

@@ -5,6 +5,7 @@ import { shortDate } from "@/app/orders/format";
 import type { AutoBuyTerms, OrderOnTheWay } from "@/modules/orders/client";
 import type { InventoryItem } from "@/modules/inventory/service";
 import type { InventoryEstimate } from "@/core/estimate";
+import { BuyNowButton } from "@/app/restock/buy-now-button";
 import { EditProductDialog } from "./edit-product-dialog";
 import {
   addDays,
@@ -63,6 +64,7 @@ export function InventoryCard({
   others,
   order,
   autoBuyTerms,
+  maxOrderCents,
   defaultThresholdDays = DEFAULT_PREDICT_CONFIG.defaultLowStockThresholdDays,
 }: {
   item: InventoryItem;
@@ -75,6 +77,8 @@ export function InventoryCard({
   /** An order we are placing or that is on its way, which the estimate doesn't count until it arrives. */
   order: OrderOnTheWay | null;
   autoBuyTerms: AutoBuyTerms;
+  /** The most one order may cost, fees included, for the Buy now dialog. */
+  maxOrderCents: number;
 }) {
   const { product, estimate } = item;
   const status = getStatus(estimate);
@@ -133,6 +137,9 @@ export function InventoryCard({
       )}
 
       <Confidence estimate={estimate} />
+
+      {/* Not while an order for it is on its way: the tag above says so, and a second order would double up. */}
+      {!order && <BuyNowButton productId={product.id} name={product.name} maxOrderCents={maxOrderCents} />}
 
       <details className="group border-t border-zinc-200 pt-3 dark:border-zinc-800">
         <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-zinc-700 dark:text-zinc-300">

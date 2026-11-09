@@ -2,7 +2,7 @@
 
 What happens after the app has found a listing for a low product ([restock.md](restock.md)): the user's PayPal is charged, Zinc buys the item from the store, the unused part of the charge is refunded, and the user can follow the parcel. It runs in two ways that share one pipeline:
 
-- **Buy for me**: the user presses the button on a suggestion.
+- **Buy for me**: the user presses the button on a suggestion, or **Buy now** on any product's card (which first finds a listing for it; see [restock.md](restock.md)).
 - **Auto-buy**: the scheduled job buys a suggestion for a product that has auto-buy on, when every limit allows it. Otherwise the suggestion stays on the dashboard for the user.
 
 The code is `src/modules/orders/` (guide: [its README](../src/modules/orders/README.md)); the screens are `src/app/orders/`, `src/app/settings/payment/` and the buttons in `src/app/restock/`.

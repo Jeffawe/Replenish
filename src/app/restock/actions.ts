@@ -2,13 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { SuggestionView } from "./buy-dialog";
 import { requireUser } from "@/modules/auth";
 import { correctStockCount, undoAnswer, type CorrectionOutcome } from "@/modules/questions";
 import { checkStockCount } from "@/core/plausibility";
 import { submitBatch } from "@/modules/ingestion";
 import { getProduct } from "@/modules/inventory/repo";
 import { buyNow, MOST_PACKS, orderDepsFromEnv, FulfilmentError, PaymentError, type RefusalReason } from "@/modules/orders";
-import { snoozeSuggestion } from "@/modules/restock";
+import { findForBuyNow, snoozeSuggestion } from "@/modules/restock";
 
 /** The answers to "you're low on X; we found this": "buy it for me", "I just bought this", "not now", and "that's not right" (a correction). */
 
@@ -40,6 +41,24 @@ export async function buyForMeAction(input: unknown): Promise<BuyForMeResult> {
     if (error instanceof PaymentError || error instanceof FulfilmentError) return { status: "refused", message: "Buying isn't set up on this server yet.", fix: null };
     throw error;
   }
+}
+
+export type BuyNowSearch =
+  | { status: "ready"; suggestion: SuggestionView }
+  | { status: "unavailable"; message: string };
+
+/**
+ * "Buy now" on a product's card: finds a listing for that one product (or reuses a search from the
+ * last day) and hands it back for the user to confirm. It buys nothing; "Buy it" in the dialog does,
+ * through buyForMeAction.
+ */
+export async function findForBuyNowAction(productId: unknown): Promise<BuyNowSearch> {
+  const user = await requireUser();
+  const id = IdSchema.safeParse(productId);
+  if (!id.success) return { status: "unavailable", message: "We can't find that product any more." };
+  const found = await findForBuyNow(user.id, id.data);
+  if (found.status === "unavailable") return found;
+  return { status: "ready", suggestion: { ...found.suggestion, searchedAt: found.suggestion.searchedAt.toISOString().slice(0, 10) } };
 }
 
 /** "Not now": it comes back in a few days if the product is still low. */
