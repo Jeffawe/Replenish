@@ -101,7 +101,11 @@ export function BuyDialog({
   const { buy, pending, message } = useBuy(suggestion.id);
 
   useEffect(() => {
-    dialogRef.current?.showModal();
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    // Buying moves to /orders while this is still open. The dashboard is kept (hidden) behind it, and an open
+    // modal dialog makes the whole document unclickable even when hidden, so close it whenever this goes away.
+    return () => dialog?.close();
   }, []);
 
   const price = priceBreakdown(listing.priceCents * packs, maxOrderCents);
