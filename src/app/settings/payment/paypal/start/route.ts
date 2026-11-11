@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { appOrigin } from "@/lib/origin";
+import { appUrl } from "@/lib/request-origin";
 import { requireUser } from "@/modules/auth";
 import { paymentsConfigured, paymentsFromEnv, PaymentError, startPaypalSetup } from "@/modules/orders";
 
@@ -10,7 +11,7 @@ import { paymentsConfigured, paymentsFromEnv, PaymentError, startPaypalSetup } f
  */
 export async function POST(request: Request) {
   const user = await requireUser();
-  const back = (result: string) => NextResponse.redirect(new URL(`/settings/payment?paypal=${result}`, request.url), 303);
+  const back = (result: string) => NextResponse.redirect(appUrl(`/settings/payment?paypal=${result}`, request), 303);
   try {
     const { approveUrl } = await startPaypalSetup(user.id, await appOrigin(), paymentsFromEnv());
     return NextResponse.redirect(approveUrl, 303);

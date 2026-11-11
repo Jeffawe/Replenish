@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { appUrl } from "@/lib/request-origin";
 import { requireUser } from "@/modules/auth";
 import { finishPaypalSetup, paymentsFromEnv, PaymentError } from "@/modules/orders";
 
@@ -16,5 +17,5 @@ export async function GET(request: Request) {
     result = "unavailable";
   }
   const to = result === "connected" ? "connected" : result === "not-approved" ? "not-approved" : "unavailable";
-  return NextResponse.redirect(new URL(`/settings/payment?paypal=${to}`, request.url));
+  return NextResponse.redirect(appUrl(`/settings/payment?paypal=${to}`, request));
 }
